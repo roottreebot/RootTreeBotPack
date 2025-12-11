@@ -1,45 +1,73 @@
 #!/bin/bash
 set -e
-echo "=== Installing V1LEFarm Bot (GitHub-safe) ==="
 
-# --- Check environment variables ---
+echo "=== V1LEFarm Bot Installer (GitHub-ready) ==="
+
+# Check environment variables
 if [ -z "$BOT_TOKEN" ]; then
   echo "ERROR: Set BOT_TOKEN first (export BOT_TOKEN=...)"
   exit 1
 fi
 
 if [ -z "$ADMIN_IDS" ]; then
-  echo "ERROR: Set ADMIN_IDS first (export ADMIN_IDS=123,456)"
+  echo "ERROR: Set ADMIN_IDS first (export ADMIN_IDS=666,777)"
   exit 1
 fi
 
-# --- Install dependencies ---
-echo "Installing Node.js, Git, curl..."
+# Install dependencies
 pkg install -y nodejs git curl || apt install -y nodejs git curl
 npm install -g pm2
 
-# --- Create bot folder ---
-mkdir -p ~/v1lefarm
-cd ~/v1lefarm
+# Create bot directory
+BOT_DIR="${BOT_DIR:-$HOME/v1lefarm}"
+mkdir -p "$BOT_DIR"
+cd "$BOT_DIR"
 
-# --- Fetch bot.js from GitHub ---
+# Download bot.js from GitHub
 BOT_JS_URL="https://raw.githubusercontent.com/roottreebot/V1LEFarmBotPack/refs/heads/main/bot.js"
-curl -L -o bot.js "$BOT_JS_URL"
+curl -sL "$BOT_JS_URL" -o bot.js
 
-# --- Inject BOT_TOKEN and ADMIN_IDS ---
-ADMIN_ARRAY=$(echo "$ADMIN_IDS" | awk -F',' '{for(i=1;i<=NF;i++) printf "%s%s",$i,(i==NF?"":",")}')
-sed -i "s|YOUR_BOT_TOKEN|$BOT_TOKEN|g" bot.js
-sed -i "s|YOUR_ADMIN_ID|[$ADMIN_ARRAY]|g" bot.js
+# Make sure bot.js uses environment variables
+echo "✅ Using BOT_TOKEN and ADMIN_IDS from environment variables."
 
-# --- Install Node modules ---
-if [ ! -f package.json ]; then npm init -y; fi
+# Initialize npm and install dependencies
+if [ ! -f package.json ]; then
+  npm init -y
+fi
 npm install node-telegram-bot-api
 
-# --- PM2 setup ---
-pm2 start bot.js --name v1lefarmbot --watch --max-restarts 100 --restart-delay 2000
+# Setup PM2 scripts
+cat > start.sh <<'SH'
+#!/bin/bash
+pm2 start bot.js --name v1lefarmbot --watch --max-restarts 100
 pm2 save
+echo "Bot started. Logs: pm2 logs v1lefarmbot"
+SH
+
+cat > stop.sh <<'SH'
+#!/bin/bash
+pm2 stop v1lefarmbot || true
+pm2 delete v1lefarmbot || true
+pm2 save
+echo "Bot stopped."
+SH
+
+cat > restart.sh <<'SH'
+#!/bin/bash
+pm2 restart v1lefarmbot || pm2 start bot.js --name v1lefarmbot --watch --max-restarts 100
+pm2 save
+echo "Bot restarted."
+SH
+
+chmod +x start.sh stop.sh restart.sh
+
+# Optional: auto-start on Termux boot (requires Termux:Boot app)
+mkdir -p ~/.termux/boot
+echo "bash $BOT_DIR/start.sh" > ~/.termux/boot/start_bot.sh
+chmod +x ~/.termux/boot/start_bot.sh
+
+# Start the bot now
+bash start.sh
 
 echo "✅ Installation complete!"
-echo "Bot folder: ~/v1lefarm"
-echo "Start/stop/restart with pm2: pm2 start|stop|restart v1lefarmbot"
-echo "View logs: pm2 logs v1lefarmbot"
+echo "Manage your bot with: ./start.sh ./stop.sh ./restart.sh"
