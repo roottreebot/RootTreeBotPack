@@ -1,7 +1,11 @@
 {
   "name": "v1lefarmbot",
   "version": "1.0.0",
+  "description": "V1LEFarm Telegram Bot",
   "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
   "dependencies": {
     "node-telegram-bot-api": "^0.61.0"
   }
