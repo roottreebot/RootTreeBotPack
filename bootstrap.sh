@@ -1,6 +1,12 @@
 #!/bin/bash
-# Set your bot token & admin IDs before running
-export BOT_TOKEN="YOUR_BOT_TOKEN_HERE"
-export ADMIN_IDS="6665237815,8031966101"
+set -e
+pkg update -y && pkg upgrade -y
+pkg install -y nodejs git curl
+npm install -g pm2
 
-bash -c "$(curl -s https://raw.githubusercontent.com/roottreebot/V1LEFarmBotPack/refs/heads/main/install_bot.sh)"
+mkdir -p ~/v1lefarm
+cd ~/v1lefarm
+
+curl -L https://raw.githubusercontent.com/roottreebot/V1LEFarmBotPack/refs/heads/main/install_bot.sh -o install_bot.sh
+chmod +x install_bot.sh
+bash install_bot.sh
