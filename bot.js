@@ -77,13 +77,13 @@ bot.onText(/\/start/, msg => {
 
   bot.sendMessage(
     chatId,
-    `🌱 *Welcome to V1LEFarm*\n\n⭐ Level: *${users[chatId].level}*\n`,
+    `💥 *Welcome to Root Tree*\n\n⭐ Level: *${users[chatId].level}*\n`,
     {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "🟢 God Complex", callback_data: "product_god" }],
-          [{ text: "🌿 Killer Green Budz", callback_data: "product_kgb" }]
+          [{ text: "🪴 God Complex", callback_data: "product_god" }],
+          [{ text: "🪴 Killer Green Budz", callback_data: "product_kgb" }]
         ]
       }
     }
