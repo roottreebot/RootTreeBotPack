@@ -21,9 +21,7 @@ const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
 
 let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
-let meta = fs.existsSync(META_FILE)
-    ? JSON.parse(fs.readFileSync(META_FILE))
-    : { weeklyReset: Date.now() };
+let meta = fs.existsSync(META_FILE) ? JSON.parse(fs.readFileSync(META_FILE)) : { weeklyReset: Date.now() };
 
 function ensureUser(id, username) {
     if (!users[id]) {
@@ -102,6 +100,7 @@ function addXP(id, xp) {
     saveAll();
 }
 
+// Mobile-friendly XP bar
 function xpBar(xp, lvl) {
     const max = lvl * 5;
     const fill = Math.floor((xp / max) * 10);
@@ -118,15 +117,7 @@ const HEADER = `
 \`\`\`
 `;
 
-// ================= CLEAN MESSAGES =================
-const lastMsg = {};
-async function sendClean(id, text, opt = {}) {
-    if (lastMsg[id]) try { await bot.deleteMessage(id, lastMsg[id]); } catch {}
-    const m = await bot.sendMessage(id, text, opt);
-    lastMsg[id] = m.message_id;
-}
-
-// ================= SESSION / RATE LIMIT =================
+// ================= SESSIONS & CLEAN MESSAGES =================
 const sessions = {};
 const lastAction = {};
 const RATE_LIMIT_MS = 1200;
@@ -142,18 +133,37 @@ function isRateLimited(id) {
     return false;
 }
 
-// ================= START =================
-bot.onText(/\/start/, msg => {
-    const id = msg.chat.id;
-    const username = msg.from.username;
-    if (banGuard(id) || isRateLimited(id)) return;
+// Unified function to send or edit a single main message
+async function sendOrEdit(id, text, opt = {}) {
+    if (!sessions[id]) sessions[id] = {};
+    const mainMsgId = sessions[id].mainMsgId;
 
-    ensureUser(id, username);
-    sessions[id] = {};
+    if (mainMsgId) {
+        try {
+            await bot.editMessageText(text, { chat_id: id, message_id: mainMsgId, ...opt });
+            return;
+        } catch {}
+    }
+
+    const m = await bot.sendMessage(id, text, opt);
+    sessions[id].mainMsgId = m.message_id;
+}
+
+// ================= DELETE USER MESSAGES IMMEDIATELY =================
+bot.on('message', msg => {
+    const id = msg.chat.id;
+    if (!msg.from.is_bot) bot.deleteMessage(id, msg.message_id).catch(() => {});
+});
+
+// ================= MAIN MENU =================
+async function showMainMenu(id) {
+    ensureUser(id);
+    sessions[id] = sessions[id] || {};
+    sessions[id].step = null;
 
     const kb = Object.keys(PRODUCTS).map(p => [{ text: `🌿 ${p}`, callback_data: `product_${p}` }]);
 
-    sendClean(id,
+    await sendOrEdit(id,
         `${HEADER}
 🎚 Level: *${users[id].level}*  
 📊 XP: ${xpBar(users[id].xp, users[id].level)}
@@ -162,13 +172,20 @@ bot.onText(/\/start/, msg => {
 ${COMMANDS_TEXT}`,
         { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
     );
+}
+
+// ================= START =================
+bot.onText(/\/start/, msg => {
+    const id = msg.chat.id;
+    if (banGuard(id) || isRateLimited(id)) return;
+    showMainMenu(id);
 });
 
 // ================= HELP =================
 bot.onText(/\/help/, msg => {
     const id = msg.chat.id;
     if (banGuard(id)) return;
-    sendClean(id, `${HEADER}\n${COMMANDS_TEXT}`, { parse_mode: 'Markdown' });
+    showMainMenu(id);
 });
 
 // ================= PROFILE =================
@@ -192,22 +209,20 @@ ${orders}
 
 ${COMMANDS_TEXT}`;
 
-    try {
-        const photos = await bot.getUserProfilePhotos(id, { limit: 1 });
-        if (photos.total_count > 0) {
-            const fileId = photos.photos[0].pop().file_id;
-            return sendClean(id, caption, { parse_mode: 'Markdown' });
+    await sendOrEdit(id, caption, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [[{ text: '🏠 Back to Menu', callback_data: 'back_main' }]]
         }
-    } catch {}
-
-    sendClean(id, caption, { parse_mode: 'Markdown' });
+    });
 });
 
 // ================= LEADERBOARD =================
 bot.onText(/\/top/, msg => {
-    checkWeeklyReset();
     const id = msg.chat.id;
     if (banGuard(id) || isRateLimited(id)) return;
+
+    checkWeeklyReset();
 
     const top = Object.entries(users)
         .filter(([, u]) => !u.banned)
@@ -221,7 +236,12 @@ bot.onText(/\/top/, msg => {
         txt += `#${i + 1} — ${link} — Level ${u.level} — XP ${u.weeklyXp}\n`;
     });
 
-    sendClean(id, txt, { parse_mode: 'Markdown' });
+    sendOrEdit(msg.chat.id, txt, {
+        parse_mode: 'Markdown',
+        reply_markup: {
+            inline_keyboard: [[{ text: '🏠 Back to Menu', callback_data: 'back_main' }]]
+        }
+    });
 });
 
 // ================= ADMIN STATS =================
@@ -285,19 +305,24 @@ bot.on('callback_query', async q => {
     if (!sessions[id]) sessions[id] = {};
     const s = sessions[id];
 
+    // BACK TO MAIN MENU
+    if (q.data === 'back_main') return showMainMenu(id);
+
+    // PRODUCT SELECTED
     if (q.data.startsWith('product_')) {
         s.product = q.data.replace('product_', '');
         s.step = 'amount';
-        return bot.editMessageText(
+        return sendOrEdit(id,
             `${HEADER}\n🌿 *${s.product}*  
 ▫️ Minimum: 2g  
 ▫️ Price: $10/g  
 
 ✏️ Send grams or $ amount`,
-            { chat_id: id, message_id: q.message.message_id, parse_mode: 'Markdown' }
+            { parse_mode: 'Markdown' }
         );
     }
 
+    // CONFIRM ORDER
     if (q.data === 'confirm_order') {
         const order = { ...s, status: 'Pending', time: Date.now() };
         users[id].orders.push(order);
@@ -330,9 +355,11 @@ bot.on('callback_query', async q => {
         }
 
         addXP(id, 2);
-        sendClean(id, `${HEADER}\n📨 *Your order has been sent to the admins*`, { parse_mode: 'Markdown' });
+        // Update main menu to reflect new XP live
+        showMainMenu(id);
     }
 
+    // ADMIN ACTION
     if (q.data.startsWith('admin_')) {
         const [, act, uid] = q.data.split('_');
         ensureUser(uid);
@@ -372,13 +399,6 @@ bot.on('message', msg => {
     const id = msg.chat.id;
     const username = msg.from.username;
 
-    // Delete all user messages after 500ms
-    if (!msg.from.is_bot) {
-        setTimeout(() => {
-            bot.deleteMessage(id, msg.message_id).catch(() => {});
-        }, 500);
-    }
-
     // Skip if not in order flow
     if (!sessions[id] || sessions[id].step !== 'amount') return;
 
@@ -396,12 +416,12 @@ bot.on('message', msg => {
         cash = +(grams * price).toFixed(2);
     }
 
-    if (!grams || grams < 2) return sendClean(id, '❌ Minimum 2g');
+    if (!grams || grams < 2) return sendOrEdit(id, '❌ Minimum 2g');
 
     s.grams = grams;
     s.cash = cash;
 
-    sendClean(id,
+    sendOrEdit(id,
         `${HEADER}
 🧾 *Order Summary*  
 🌿 ${s.product}  
@@ -411,7 +431,8 @@ bot.on('message', msg => {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '✅ Confirm', callback_data: 'confirm_order' }]
+                    [{ text: '✅ Confirm', callback_data: 'confirm_order' }],
+                    [{ text: '🏠 Back to Menu', callback_data: 'back_main' }]
                 ]
             }
         }
