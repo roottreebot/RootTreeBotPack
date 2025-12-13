@@ -1,6 +1,5 @@
 // === V1LE FARM BOT ===
-// High-traffic | Clean UI | Anti-spam | Order History | Profile
-// ENV: BOT_TOKEN, ADMIN_IDS=123,456
+// High-traffic | Clean UI | Orders | Leaderboards | Full Admin Suite
 
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
@@ -20,23 +19,59 @@ console.log('✅ Bot running');
 
 // ================= DATABASE =================
 const DB_FILE = 'users.json';
-let users = fs.existsSync(DB_FILE)
-    ? JSON.parse(fs.readFileSync(DB_FILE))
-    : {};
+const META_FILE = 'meta.json';
 
-function ensureUser(chatId) {
-    if (!users[chatId]) {
-        users[chatId] = { xp: 0, level: 1, orders: [] };
+let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
+let meta = fs.existsSync(META_FILE)
+    ? JSON.parse(fs.readFileSync(META_FILE))
+    : { weeklyReset: Date.now() };
+
+function ensureUser(id) {
+    if (!users[id]) {
+        users[id] = {
+            xp: 0,
+            weeklyXp: 0,
+            level: 1,
+            orders: [],
+            banned: false
+        };
     }
-    if (!users[chatId].orders) users[chatId].orders = [];
+    if (users[id].weeklyXp === undefined) users[id].weeklyXp = 0;
+    if (users[id].banned === undefined) users[id].banned = false;
+    if (!users[id].orders) users[id].orders = [];
 }
 
-let saveTimeout = null;
-function saveUsersDebounced() {
-    clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
+let saveTimer;
+function saveAll() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
         fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
+        fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2));
     }, 500);
+}
+
+// ================= HELPERS =================
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+function checkWeeklyReset() {
+    if (Date.now() - meta.weeklyReset >= WEEK_MS) {
+        for (const id in users) users[id].weeklyXp = 0;
+        meta.weeklyReset = Date.now();
+        saveAll();
+    }
+}
+
+function isAdmin(id) {
+    return ADMIN_IDS.includes(id);
+}
+
+function banGuard(id) {
+    ensureUser(id);
+    if (users[id].banned) {
+        bot.sendMessage(id, '🚫 You are banned from using this bot.');
+        return true;
+    }
+    return false;
 }
 
 // ================= CONFIG =================
@@ -45,74 +80,26 @@ const PRODUCTS = {
     'Killer Green Budz': { price: 10 }
 };
 
-const COMMANDS_TEXT = `
-📜 *Available Commands*
+// ================= XP =================
+function addXP(id, xp) {
+    ensureUser(id);
+    users[id].xp += xp;
+    users[id].weeklyXp += xp;
 
-/start – Open menu
-/profile – View your profile
-/help – Show commands
-`;
-
-// ================= SESSION / RATE LIMIT =================
-const sessions = {};
-const lastAction = {};
-const RATE_LIMIT_MS = 1200;
-
-function isRateLimited(chatId) {
-    const now = Date.now();
-    if (!lastAction[chatId]) {
-        lastAction[chatId] = now;
-        return false;
+    while (users[id].xp >= users[id].level * 5) {
+        users[id].xp -= users[id].level * 5;
+        users[id].level++;
     }
-    if (now - lastAction[chatId] < RATE_LIMIT_MS) return true;
-    lastAction[chatId] = now;
-    return false;
+    saveAll();
 }
 
-// ================= CLEAN MESSAGE SYSTEM =================
-const botMessages = {};
-
-async function safeDelete(chatId, msgId) {
-    try { await bot.deleteMessage(chatId, msgId); } catch {}
+function xpBar(xp, lvl) {
+    const max = lvl * 5;
+    const fill = Math.floor((xp / max) * 10);
+    return '🟥'.repeat(fill) + '⬜'.repeat(10 - fill) + ` ${xp}/${max}`;
 }
 
-async function sendCleanMessage(chatId, text, options = {}) {
-    if (botMessages[chatId]) safeDelete(chatId, botMessages[chatId]);
-    const sent = await bot.sendMessage(chatId, text, options);
-    botMessages[chatId] = sent.message_id;
-    return sent;
-}
-
-async function sendCleanPhoto(chatId, photo, options = {}) {
-    if (botMessages[chatId]) safeDelete(chatId, botMessages[chatId]);
-    const sent = await bot.sendPhoto(chatId, photo, options);
-    botMessages[chatId] = sent.message_id;
-    return sent;
-}
-
-// ================= XP SYSTEM =================
-function addXP(chatId, xp) {
-    ensureUser(chatId);
-    users[chatId].xp += xp;
-
-    let leveled = false;
-    while (users[chatId].xp >= users[chatId].level * 5) {
-        users[chatId].xp -= users[chatId].level * 5;
-        users[chatId].level++;
-        leveled = true;
-    }
-
-    saveUsersDebounced();
-    return leveled;
-}
-
-function xpBar(xp, level) {
-    const max = level * 5;
-    const filled = Math.floor((xp / max) * 10);
-    return '🟥'.repeat(filled) + '⬜'.repeat(10 - filled) + ` ${xp}/${max}`;
-}
-
-// ================= ASCII HEADER =================
+// ================= ASCII =================
 const HEADER = `
 \`\`\`
 ██╗   ██╗ ██╗██╗     ███████╗
@@ -125,225 +112,225 @@ const HEADER = `
 \`\`\`
 `;
 
+// ================= CLEAN MESSAGES =================
+const lastMsg = {};
+async function sendClean(id, text, opt = {}) {
+    if (lastMsg[id]) try { await bot.deleteMessage(id, lastMsg[id]); } catch {}
+    const m = await bot.sendMessage(id, text, opt);
+    lastMsg[id] = m.message_id;
+}
+
 // ================= START =================
 bot.onText(/\/start/, msg => {
-    const chatId = msg.chat.id;
-    if (isRateLimited(chatId)) return;
+    const id = msg.chat.id;
+    if (banGuard(id)) return;
 
-    ensureUser(chatId);
-    sessions[chatId] = {};
+    ensureUser(id);
 
-    const keyboard = Object.keys(PRODUCTS).map(p => [
-        { text: `🌿 ${p}`, callback_data: `product_${p}` }
-    ]);
+    const kb = Object.keys(PRODUCTS).map(p => [{ text: `🌿 ${p}`, callback_data: `product_${p}` }]);
 
-    sendCleanMessage(
-        chatId,
+    sendClean(id,
         `${HEADER}
-👤 *Your Profile*
-🎚 Level: *${users[chatId].level}*
-📊 XP: ${xpBar(users[chatId].xp, users[chatId].level)}
+🎚 Level: *${users[id].level}*
+📊 XP: ${xpBar(users[id].xp, users[id].level)}
 
-🛒 *Order Menu*
-Select a product below 👇
-${COMMANDS_TEXT}`,
-        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: keyboard } }
+Commands:
+/profile /top /help`,
+        { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
     );
 });
 
-// ================= HELP =================
-bot.onText(/\/help/, msg => {
-    const chatId = msg.chat.id;
-    if (isRateLimited(chatId)) return;
-
-    sendCleanMessage(chatId, `${HEADER}\n${COMMANDS_TEXT}`, { parse_mode: 'Markdown' });
-});
-
 // ================= PROFILE =================
-bot.onText(/\/profile/, async msg => {
-    const chatId = msg.chat.id;
-    if (isRateLimited(chatId)) return;
+bot.onText(/\/profile/, msg => {
+    const id = msg.chat.id;
+    if (banGuard(id)) return;
 
-    ensureUser(chatId);
+    ensureUser(id);
 
-    const history =
-        users[chatId].orders.length === 0
-            ? '_No orders yet_'
-            : users[chatId].orders
-                  .slice(-5)
-                  .reverse()
-                  .map(o =>
-                      `• ${o.product} – ${o.grams}g – $${o.cash} – *${o.status}*`
-                  )
-                  .join('\n');
+    const orders = users[id].orders.slice(-5).reverse()
+        .map(o => `• ${o.product} ${o.grams}g $${o.cash} *${o.status}*`)
+        .join('\n') || '_No orders_';
 
-    const caption = `${HEADER}
-👤 *User Profile*
+    sendClean(id,
+        `${HEADER}
+🎚 Level: *${users[id].level}*
+📊 XP: ${xpBar(users[id].xp, users[id].level)}
 
-🎚 Level: *${users[chatId].level}*
-📊 XP: ${xpBar(users[chatId].xp, users[chatId].level)}
-
-📦 *Recent Orders*
-${history}
-
-${COMMANDS_TEXT}`;
-
-    try {
-        const photos = await bot.getUserProfilePhotos(chatId, { limit: 1 });
-        if (photos.total_count > 0) {
-            const fileId = photos.photos[0].pop().file_id;
-            return sendCleanPhoto(chatId, fileId, { caption, parse_mode: 'Markdown' });
-        }
-    } catch {}
-
-    sendCleanMessage(chatId, caption, { parse_mode: 'Markdown' });
+📦 Orders
+${orders}`,
+        { parse_mode: 'Markdown' }
+    );
 });
 
-// ================= CALLBACKS =================
-bot.on('callback_query', async q => {
-    const chatId = q.message.chat.id;
-    if (isRateLimited(chatId)) return;
+// ================= LEADERBOARD =================
+bot.onText(/\/top/, msg => {
+    checkWeeklyReset();
+    const id = msg.chat.id;
+    if (banGuard(id)) return;
 
-    const msgId = q.message.message_id;
-    const data = q.data;
+    const top = Object.entries(users)
+        .filter(([, u]) => !u.banned)
+        .sort((a, b) => b[1].weeklyXp - a[1].weeklyXp)
+        .slice(0, 10);
 
-    ensureUser(chatId);
-    if (!sessions[chatId]) sessions[chatId] = {};
-    const s = sessions[chatId];
+    let txt = `${HEADER}\n🏆 *Weekly Top Farmers*\n\n`;
+    top.forEach(([uid, u], i) => {
+        txt += `#${i + 1} Level ${u.level} — XP ${u.weeklyXp}\n`;
+    });
 
-    if (data.startsWith('product_')) {
-        s.product = data.replace('product_', '');
-        s.step = 'amount';
+    sendClean(id, txt, { parse_mode: 'Markdown' });
+});
 
-        bot.editMessageText(
-            `${HEADER}
-🌿 *${s.product}*
-▫️ Minimum: *2g*
-▫️ Price: *$10/g*
+// ================= ADMIN STATS =================
+bot.onText(/\/stats/, msg => {
+    if (!isAdmin(msg.chat.id)) return;
 
-✏️ Send grams or $ amount`,
-            { chat_id: chatId, message_id: msgId, parse_mode: 'Markdown' }
-        );
-        return;
+    let total = 0, banned = 0, orders = 0;
+    let pending = 0, accepted = 0, rejected = 0;
+
+    for (const u of Object.values(users)) {
+        total++;
+        if (u.banned) banned++;
+        orders += u.orders.length;
+        u.orders.forEach(o => {
+            if (o.status === 'Pending') pending++;
+            if (o.status === 'Accepted') accepted++;
+            if (o.status === 'Rejected') rejected++;
+        });
     }
 
-    if (data === 'confirm_order') {
-        if (s.locked) return;
-        s.locked = true;
+    bot.sendMessage(msg.chat.id,
+        `📊 *Bot Stats*
+Users: ${total}
+Active: ${total - banned}
+Banned: ${banned}
 
-        const order = {
-            product: s.product,
-            grams: s.grams,
-            cash: s.cash,
-            status: 'Pending',
-            time: Date.now()
-        };
+Orders: ${orders}
+⏳ Pending: ${pending}
+✅ Accepted: ${accepted}
+❌ Rejected: ${rejected}`,
+        { parse_mode: 'Markdown' }
+    );
+});
 
-        users[chatId].orders.push(order);
-        users[chatId].orders = users[chatId].orders.slice(-10);
-        saveUsersDebounced();
+// ================= ADMIN BAN / UNBAN =================
+bot.onText(/\/ban (\d+)/, msg => {
+    if (!isAdmin(msg.chat.id)) return;
+    const id = Number(msg.match[1]);
+    ensureUser(id);
+    users[id].banned = true;
+    saveAll();
+    bot.sendMessage(msg.chat.id, `🚫 User ${id} banned`);
+});
 
-        s.adminMsgs = [];
-        for (const adminId of ADMIN_IDS) {
-            const sent = await bot.sendMessage(
-                adminId,
-                `📦 *NEW ORDER*
-👤 [User](tg://user?id=${chatId})
-🌿 ${s.product}
-⚖️ ${s.grams}g
-💲 $${s.cash}`,
+bot.onText(/\/unban (\d+)/, msg => {
+    if (!isAdmin(msg.chat.id)) return;
+    const id = Number(msg.match[1]);
+    ensureUser(id);
+    users[id].banned = false;
+    saveAll();
+    bot.sendMessage(msg.chat.id, `✅ User ${id} unbanned`);
+});
+
+// ================= ORDER FLOW =================
+const sessions = {};
+
+bot.on('callback_query', async q => {
+    const id = q.message.chat.id;
+    if (banGuard(id)) return;
+
+    ensureUser(id);
+    if (!sessions[id]) sessions[id] = {};
+    const s = sessions[id];
+
+    if (q.data.startsWith('product_')) {
+        s.product = q.data.replace('product_', '');
+        s.step = 'amount';
+        return bot.editMessageText(
+            `${HEADER}\nSend grams or $ amount`,
+            { chat_id: id, message_id: q.message.message_id, parse_mode: 'Markdown' }
+        );
+    }
+
+    if (q.data === 'confirm_order') {
+        const price = PRODUCTS[s.product].price;
+        const order = { ...s, status: 'Pending', time: Date.now() };
+        users[id].orders.push(order);
+        saveAll();
+
+        for (const a of ADMIN_IDS) {
+            await bot.sendMessage(a,
+                `📦 ORDER
+User: ${id}
+${order.product} ${order.grams}g $${order.cash}`,
                 {
-                    parse_mode: 'Markdown',
                     reply_markup: {
                         inline_keyboard: [[
-                            { text: '✅ Accept', callback_data: `admin_accept_${chatId}` },
-                            { text: '❌ Reject', callback_data: `admin_reject_${chatId}` }
+                            { text: '✅ Accept', callback_data: `admin_accept_${id}` },
+                            { text: '❌ Reject', callback_data: `admin_reject_${id}` }
                         ]]
                     }
                 }
             );
-            s.adminMsgs.push({ adminId, msgId: sent.message_id });
         }
 
-        const leveled = addXP(chatId, 2);
-
-        sendCleanMessage(
-            chatId,
-            `${HEADER}
-📨 *Order Sent*
-📊 ${xpBar(users[chatId].xp, users[chatId].level)}
-${leveled ? '\n🎉 *LEVEL UP!*' : ''}`,
-            { parse_mode: 'Markdown' }
-        );
-        return;
+        addXP(id, 2);
+        sendClean(id, `${HEADER}\n📨 Order sent`, { parse_mode: 'Markdown' });
     }
 
-    if (data.startsWith('admin_')) {
-        const [, action, userId] = data.split('_');
-        ensureUser(userId);
+    if (q.data.startsWith('admin_')) {
+        const [, act, uid] = q.data.split('_');
+        const o = users[uid].orders.at(-1);
+        if (!o || o.status !== 'Pending') return;
 
-        const lastOrder = users[userId].orders.at(-1);
-        if (lastOrder) lastOrder.status = action === 'accept' ? 'Accepted' : 'Rejected';
+        o.status = act === 'accept' ? 'Accepted' : 'Rejected';
+        saveAll();
 
-        bot.sendMessage(
-            userId,
-            action === 'accept' ? '✅ *Order Accepted*' : '❌ *Order Rejected*',
-            { parse_mode: 'Markdown' }
+        bot.sendMessage(uid,
+            act === 'accept' ? '✅ Order accepted' : '❌ Order rejected'
         );
 
-        saveUsersDebounced();
-        sessions[userId] = {};
+        bot.editMessageText(
+            `${q.message.text}\n\n${act === 'accept' ? '✅ ACCEPTED' : '❌ REJECTED'}`,
+            { chat_id: q.message.chat.id, message_id: q.message.message_id }
+        );
     }
 });
 
 // ================= USER INPUT =================
-bot.on('message', async msg => {
-    const chatId = msg.chat.id;
-    if (!sessions[chatId] || sessions[chatId].step !== 'amount') return;
+bot.on('message', msg => {
+    const id = msg.chat.id;
+    if (!sessions[id] || sessions[id].step !== 'amount') return;
     if (msg.text.startsWith('/')) return;
-    if (isRateLimited(chatId)) {
-        safeDelete(chatId, msg.message_id);
-        return;
-    }
 
-    const s = sessions[chatId];
+    bot.deleteMessage(id, msg.message_id).catch(() => {});
+    const s = sessions[id];
     const price = PRODUCTS[s.product].price;
-    const text = msg.text.trim();
-
-    safeDelete(chatId, msg.message_id);
+    const t = msg.text.trim();
 
     let grams, cash;
-
-    if (text.startsWith('$')) {
-        cash = parseFloat(text.slice(1));
-        if (isNaN(cash) || cash < price * 2)
-            return sendCleanMessage(chatId, '❌ Minimum $20');
+    if (t.startsWith('$')) {
+        cash = parseFloat(t.slice(1));
         grams = +(cash / price).toFixed(1);
     } else {
-        grams = parseFloat(text);
-        if (isNaN(grams) || grams < 2)
-            return sendCleanMessage(chatId, '❌ Minimum 2g');
-        grams = Math.round(grams * 2) / 2;
+        grams = Math.round(parseFloat(t) * 2) / 2;
         cash = +(grams * price).toFixed(2);
     }
 
+    if (!grams || grams < 2) return sendClean(id, '❌ Minimum 2g');
+
     s.grams = grams;
     s.cash = cash;
-    s.step = 'confirm';
 
-    sendCleanMessage(
-        chatId,
+    sendClean(id,
         `${HEADER}
-🧾 *Order Summary*
-🌿 ${s.product}
-⚖️ ${grams}g
-💲 $${cash}`,
+🧾 ${s.product}
+${grams}g — $${cash}`,
         {
             parse_mode: 'Markdown',
             reply_markup: {
                 inline_keyboard: [
-                    [{ text: '✅ Confirm', callback_data: 'confirm_order' }],
-                    [{ text: '❌ Cancel', callback_data: 'cancel_order' }]
+                    [{ text: '✅ Confirm', callback_data: 'confirm_order' }]
                 ]
             }
         }
