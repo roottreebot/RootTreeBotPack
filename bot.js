@@ -86,7 +86,7 @@ bot.on('callback_query', query => {
         session.product = productName;
         session.step = 'amount';
         bot.editMessageText(
-            `You chose: ${productName}\n\nMinimum 2g, increments of 0.5g.\nType the $ amount you want to spend or grams (e.g., 3 or 2.5):`,
+            `You chose: ${productName}\n\n🛒 Minimum 2g,\n✏️ Type $ price you want to spend or grams (e.g., 3 or 2.5):`,
             { chat_id: chatId, message_id: msgId }
         );
         return;
