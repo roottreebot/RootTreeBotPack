@@ -50,11 +50,6 @@ function xpBar(xp, level) {
     return '🟥'.repeat(percent) + '⬜'.repeat(10-percent) + ` (${xp}/${max})`;
 }
 
-// --- Send to admins ---
-function sendToAdmins(msg, options={}) {
-    ADMIN_IDS.forEach(id => bot.sendMessage(id, msg, options).catch(()=>{}));
-}
-
 // --- Show product selection ---
 function showProducts(chatId){
     const keyboard = Object.keys(PRODUCTS).map(p => [{ text: p, callback_data:`product_${p}` }]);
@@ -71,8 +66,8 @@ bot.onText(/\/start/, msg => {
     bot.sendMessage(chatId, `Your Level: ${users[chatId].level}  XP: ${xpBar(users[chatId].xp, users[chatId].level)}`);
 });
 
-// --- Inline button handler ---
-bot.on('callback_query', query => {
+// --- Callback Query Handler ---
+bot.on('callback_query', async query => {
     const chatId = query.message.chat.id;
     const msgId = query.message.message_id;
     const data = query.data;
@@ -92,6 +87,47 @@ bot.on('callback_query', query => {
         return;
     }
 
+    // Confirm order
+    if(data === 'confirm_order'){
+        session.step = 'done';
+
+        // Send order to all admins and store message IDs
+        session.adminMsgIds = [];
+        for(const adminId of ADMIN_IDS){
+            const sentMsg = await bot.sendMessage(
+                adminId,
+                `📩 New Order from [${query.from.username || query.from.first_name}](tg://user?id=${chatId})\n`+
+                `*Product:* ${session.product}\n*Grams:* ${session.grams}g\n*Price:* $${session.cash}`,
+                { parse_mode:'Markdown', reply_markup:{
+                    inline_keyboard:[
+                        [
+                            { text:'✅ Accept', callback_data:`admin_accept_${chatId}_${session.product}_${session.grams}_${session.cash}` },
+                            { text:'❌ Reject', callback_data:`admin_reject_${chatId}_${session.product}_${session.grams}_${session.cash}` }
+                        ]
+                    ]
+                }}
+            );
+            session.adminMsgIds.push({ adminId, msgId: sentMsg.message_id });
+        }
+
+        bot.sendMessage(chatId, `📝 Your order has been sent to admins.`);
+
+        // Give XP
+        const leveled = addXP(chatId, 2);
+        bot.sendMessage(chatId,
+            `Level: ${users[chatId].level} ${xpBar(users[chatId].xp, users[chatId].level)}` +
+            (leveled ? `\n🎉 You leveled up!` : '')
+        );
+        return;
+    }
+
+    // Cancel order
+    if(data === 'cancel_order'){
+        sessions[chatId] = {}; // reset session
+        bot.sendMessage(chatId, `❌ Your order has been canceled.`);
+        return;
+    }
+
     // Admin accept/reject
     if(data.startsWith('admin_accept_') || data.startsWith('admin_reject_')){
         const parts = data.split('_');
@@ -101,14 +137,30 @@ bot.on('callback_query', query => {
         const grams = parseFloat(parts[4]);
         const cash = parseFloat(parts[5]);
 
-        if(action==='accept'){
-            bot.sendMessage(userId, `✅ Your order for ${grams}g ${productName} has been ACCEPTED by an admin.`);
-            // Update other admins
-            sendToAdmins(`✅ Order for [tg://user?id=${userId}](tg://user?id=${userId}) accepted.`, { parse_mode:'Markdown' });
-        } else {
-            bot.sendMessage(userId, `❌ Your order for ${grams}g ${productName} has been REJECTED by an admin.`);
-            sendToAdmins(`❌ Order for [tg://user?id=${userId}](tg://user?id=${userId}) rejected.`, { parse_mode:'Markdown' });
+        const userSession = sessions[userId];
+        if(!userSession) return;
+
+        // Notify user
+        bot.sendMessage(userId,
+            action==='accept'
+            ? `✅ Your order for ${grams}g ${productName} has been ACCEPTED by an admin.`
+            : `❌ Your order for ${grams}g ${productName} has been REJECTED by an admin.`
+        );
+
+        // Update all admin messages
+        if(userSession.adminMsgIds){
+            for(const { adminId, msgId } of userSession.adminMsgIds){
+                bot.editMessageText(
+                    `📩 Order from [tg://user?id=${userId}](tg://user?id=${userId})\n`+
+                    `*Product:* ${productName}\n*Grams:* ${grams}g\n*Price:* $${cash}\n`+
+                    (action==='accept' ? '✅ Accepted' : '❌ Rejected'),
+                    { chat_id: adminId, message_id: msgId, parse_mode:'Markdown' }
+                ).catch(()=>{});
+            }
         }
+
+        // Reset user's session
+        sessions[userId] = {};
         return;
     }
 });
@@ -116,12 +168,15 @@ bot.on('callback_query', query => {
 // --- Message handler for $ or grams ---
 bot.on('message', msg => {
     const chatId = msg.chat.id;
+
+    // Ignore messages that are callback queries or non-order context
     if(!sessions[chatId] || sessions[chatId].step!=='amount') return;
+    if(msg.text.startsWith('/')) return; // ignore commands
+
     const session = sessions[chatId];
     const product = PRODUCTS[session.product];
-
-    let grams, cash;
     const text = msg.text.trim();
+    let grams, cash;
 
     if(text.startsWith('$')){
         cash = parseFloat(text.replace('$',''));
@@ -136,29 +191,18 @@ bot.on('message', msg => {
         cash = +(grams * product.price).toFixed(2);
     }
 
-    // Save session
     session.grams = grams;
     session.cash = cash;
     session.step = 'confirm';
 
-    // Send order to admins with inline accept/reject buttons
-    const adminKeyboard = [
-        [{ text:'✅ Accept', callback_data:`admin_accept_${chatId}_${session.product}_${grams}_${cash}` },
-         { text:'❌ Reject', callback_data:`admin_reject_${chatId}_${session.product}_${grams}_${cash}` }]
+    // Ask user to confirm
+    const confirmKeyboard = [
+        [{ text:'✅ Confirm Order', callback_data:'confirm_order' }],
+        [{ text:'❌ Cancel', callback_data:'cancel_order' }]
     ];
-
-    sendToAdmins(
-        `📩 New Order from [${msg.from.username || msg.from.first_name}](tg://user?id=${chatId})\n`+
-        `*Product:* ${session.product}\n*Grams:* ${grams}g\n*Price:* $${cash}`,
-        { parse_mode:'Markdown', reply_markup:{ inline_keyboard: adminKeyboard } }
-    );
-
-    // Give XP
-    const leveled = addXP(chatId, 2);
-
     bot.sendMessage(chatId,
-        `📝 Your order for ${grams}g ${session.product} ($${cash}) has been sent to admins.\n`+
-        `Level: ${users[chatId].level} ${xpBar(users[chatId].xp, users[chatId].level)}` +
-        (leveled ? `\n🎉 You leveled up!` : '')
+        `You are ordering ${grams}g ${session.product} ($${cash}).\n`+
+        `Do you want to confirm your order?`,
+        { reply_markup:{ inline_keyboard: confirmKeyboard } }
     );
 });
