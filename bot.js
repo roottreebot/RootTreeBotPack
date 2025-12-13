@@ -1,4 +1,4 @@
-// V1LEFarm Bot — Full Advanced Version
+// V1LEFarm Bot — Full Advanced & Aesthetic Version
 
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
@@ -54,7 +54,7 @@ function sendToAdmins(msg, options={}){
   ADMIN_IDS.forEach(id => bot.sendMessage(id, msg, options).catch(()=>{}));
 }
 
-// --- Start Command ---
+// --- /start Command ---
 bot.onText(/\/start/, msg => {
   const chatId = msg.chat.id;
   ensureUser(chatId);
@@ -64,7 +64,10 @@ bot.onText(/\/start/, msg => {
   const bar = xpBar(users[chatId].xp, users[chatId].level);
 
   bot.sendMessage(chatId,
-    `🌱 *Welcome to V1LEFarm*\n\n⭐ Level: *${users[chatId].level}*\nXP: ${bar}\n\nSelect a product:`,
+    `🌱 *Welcome to V1LEFarm!*\n\n` +
+    `⭐ Level: *${users[chatId].level}*\n` +
+    `XP: ${bar}\n\n` +
+    `Please select a product:`,
     {
       parse_mode: 'Markdown',
       reply_markup: {
@@ -97,40 +100,40 @@ bot.on('callback_query', query => {
     session.step = 'amount';
     const product = PRODUCTS[prodIndex];
     bot.editMessageText(
-      `You chose: ${product.name}\nMinimum 2g, add by 0.5g. $${product.price} per gram.\n\nType the amount you want in $ (e.g., 20) or grams (e.g., 2.5):`,
-      { chat_id: chatId, message_id: msgId }
+      `🟢 *You chose: ${product.name}*\n\n` +
+      `Minimum 2g, add by 0.5g.\n$${product.price} per gram.\n\n` +
+      `Type the amount you want in $ (e.g., $20) or grams (e.g., 2.5g):`,
+      { chat_id: chatId, message_id: msgId, parse_mode:'Markdown' }
     );
     return;
   }
 
-  // --- Accept/Reject Admin Buttons ---
-  if(data.startsWith('admin_accept_')){
-    const [_, chatStr, productIndex, grams, cash] = data.split('_');
-    const targetChat = parseInt(chatStr);
-    const product = PRODUCTS[parseInt(productIndex)];
-    bot.sendMessage(targetChat, `✅ Your order for ${grams}g ${product.name} ($${cash}) has been accepted by an admin.`);
-    bot.editMessageText(`✅ Accepted by admin`, { chat_id: chatId, message_id: msgId });
-    return;
-  }
+  // --- Admin Accept/Reject ---
+  if(data.startsWith('admin_accept_') || data.startsWith('admin_reject_')){
+    const [action, targetChatStr, prodIndexStr, gramsStr, cashStr] = data.split('_');
+    const targetChat = parseInt(targetChatStr);
+    const product = PRODUCTS[parseInt(prodIndexStr)];
+    const grams = parseFloat(gramsStr);
+    const cash = parseFloat(cashStr);
 
-  if(data.startsWith('admin_reject_')){
-    const [_, chatStr, productIndex, grams, cash] = data.split('_');
-    const targetChat = parseInt(chatStr);
-    const product = PRODUCTS[parseInt(productIndex)];
-    bot.sendMessage(targetChat, `❌ Your order for ${grams}g ${product.name} ($${cash}) has been rejected by an admin.`);
-    bot.editMessageText(`❌ Rejected by admin`, { chat_id: chatId, message_id: msgId });
+    const replyMsg = action==='admin_accept_' 
+      ? `✅ Your order for ${grams}g ${product.name} ($${cash}) has been *accepted* by an admin!`
+      : `❌ Your order for ${grams}g ${product.name} ($${cash}) has been *rejected* by an admin.`;
+
+    bot.sendMessage(targetChat, replyMsg, { parse_mode:'Markdown' });
+    bot.editMessageText(action==='admin_accept_' ? '✅ Accepted' : '❌ Rejected', 
+      { chat_id: chatId, message_id: msgId });
     return;
   }
 });
 
-// --- Text Messages (amount input) ---
+// --- Message Handler for $ / grams input ---
 bot.on('message', msg => {
   const chatId = msg.chat.id;
   if(!sessions[chatId] || !sessions[chatId].step) return;
   const session = sessions[chatId];
 
-  // Ignore /start
-  if(msg.text.startsWith('/')) return;
+  if(msg.text.startsWith('/')) return; // Ignore commands
 
   if(session.step==='amount'){
     const input = msg.text.trim();
@@ -139,7 +142,7 @@ bot.on('message', msg => {
 
     if(input.startsWith('$')){
       cash = parseFloat(input.replace('$',''));
-      if(isNaN(cash)) return bot.sendMessage(chatId,'❌ Invalid amount');
+      if(isNaN(cash) || cash<=0) return bot.sendMessage(chatId,'❌ Invalid $ amount');
       grams = +(cash/product.price).toFixed(1);
       if(grams<2) grams=2;
     } else {
@@ -153,21 +156,23 @@ bot.on('message', msg => {
     session.grams = grams;
     session.cash = cash;
 
-    const confirmKeyboard = ADMIN_IDS.map(id => [
-      { text: '✅ Accept', callback_data:`admin_accept_${chatId}_${session.product}_${grams}_${cash}` },
-      { text: '❌ Reject', callback_data:`admin_reject_${chatId}_${session.product}_${grams}_${cash}` }
+    // Build admin inline buttons
+    const adminKeyboard = ADMIN_IDS.map(id => [
+      { text:'✅ Accept', callback_data:`admin_accept_${chatId}_${session.product}_${grams}_${cash}` },
+      { text:'❌ Reject', callback_data:`admin_reject_${chatId}_${session.product}_${grams}_${cash}` }
     ]);
 
     sendToAdmins(
-      `📩 New Order from ${userLink}\nProduct: ${product.name}\nGrams: ${grams}g\n$${cash}`,
-      { parse_mode:'Markdown', reply_markup: { inline_keyboard: confirmKeyboard } }
+      `📩 New Order from ${userLink}\n*Product:* ${product.name}\n*Grams:* ${grams}g\n*Price:* $${cash}`,
+      { parse_mode:'Markdown', reply_markup:{ inline_keyboard: adminKeyboard } }
     );
 
     bot.sendMessage(chatId,
-      `📝 Your order for ${grams}g ${product.name} ($${cash}) has been sent to admins.\nYour level: ${users[chatId].level}\nXP: ${xpBar(users[chatId].xp, users[chatId].level)}`,
-      { parse_mode: 'Markdown' }
+      `📝 Your order for ${grams}g ${product.name} ($${cash}) has been sent to admins.\n` +
+      `Level: *${users[chatId].level}*  XP: ${xpBar(users[chatId].xp, users[chatId].level)}`,
+      { parse_mode:'Markdown' }
     );
 
-    addXP(chatId, 2); // XP per order
+    addXP(chatId, 2);
   }
 });
