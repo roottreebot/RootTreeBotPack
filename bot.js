@@ -47,7 +47,7 @@ function addXP(chatId, xp) {
 function xpBar(xp, level) {
     const max = level*5;
     const percent = Math.floor((xp/max)*10);
-    return '🟩'.repeat(percent) + '⬜'.repeat(10-percent) + ` (${xp}/${max})`;
+    return '🟥'.repeat(percent) + '⬜'.repeat(10-percent) + ` (${xp}/${max})`;
 }
 
 // --- Send to admins ---
@@ -68,7 +68,7 @@ bot.onText(/\/start/, msg => {
     if(!sessions[chatId]) sessions[chatId] = {};
 
     showProducts(chatId);
-    bot.sendMessage(chatId, `🌟 Your Level: ${users[chatId].level}  XP: ${xpBar(users[chatId].xp, users[chatId].level)}`);
+    bot.sendMessage(chatId, `Your Level: ${users[chatId].level}  XP: ${xpBar(users[chatId].xp, users[chatId].level)}`);
 });
 
 // --- Inline button handler ---
