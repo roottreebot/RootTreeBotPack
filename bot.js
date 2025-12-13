@@ -1,5 +1,5 @@
 // ===============================
-// V1LEFarm Bot – $ Input Only
+// V1LEFarm Bot – Admin Accept Flow
 // ===============================
 
 const TOKEN = process.env.BOT_TOKEN;
@@ -7,20 +7,18 @@ const ADMIN_IDS = process.env.ADMIN_IDS
   ? process.env.ADMIN_IDS.split(',').map(id => Number(id))
   : [];
 
-if (!TOKEN) {
-  console.error("❌ BOT_TOKEN missing");
+if (!TOKEN || ADMIN_IDS.length === 0) {
+  console.error("❌ BOT_TOKEN or ADMIN_IDS missing");
   process.exit(1);
 }
 
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
-
 const bot = new TelegramBot(TOKEN, { polling: true });
-console.log("✅ Bot running");
 
-// -------------------------------
-// XP SYSTEM
-// -------------------------------
+console.log("✅ Bot online");
+
+// ---------------- XP SYSTEM ----------------
 const DB_FILE = './users.json';
 let users = fs.existsSync(DB_FILE)
   ? JSON.parse(fs.readFileSync(DB_FILE))
@@ -45,39 +43,27 @@ function addXP(id, amount = 1) {
   saveUsers();
 }
 
-// -------------------------------
-// ORDER SESSION
-// -------------------------------
+// ---------------- SESSIONS ----------------
 const sessions = {};
+const orders = {}; // orderId -> data
 
-// -------------------------------
-// /start
-// -------------------------------
+// ---------------- /start ----------------
 bot.onText(/\/start/, msg => {
   const chatId = msg.chat.id;
   addXP(chatId, 1);
 
-  sessions[chatId] = { state: "awaiting_cash" };
-
-  const u = getUser(chatId);
+  sessions[chatId] = { state: "await_cash" };
 
   bot.sendMessage(
     chatId,
     `🌱 *V1LEFarm Orders*\n\n` +
-    `⭐ Level: ${u.level}\n\n` +
-    `Products:\n` +
-    `🟢 God Complex\n` +
-    `🌿 Killer Green Budz\n\n` +
     `💰 $10 per gram\n📦 Minimum $20 (2g)\n\n` +
-    `✏️ *Type the amount you want*\n` +
-    `Example: \`$35\``,
+    `✏️ Type the amount you want\nExample: \`$30\``,
     { parse_mode: "Markdown" }
   );
 });
 
-// -------------------------------
-// $ INPUT HANDLER
-// -------------------------------
+// ---------------- CASH INPUT ----------------
 bot.on('message', msg => {
   const chatId = msg.chat.id;
   const text = msg.text;
@@ -86,88 +72,142 @@ bot.on('message', msg => {
   if (!text || !text.startsWith("$")) return;
 
   const cash = Number(text.replace("$", ""));
-
-  if (isNaN(cash)) {
-    return bot.sendMessage(chatId, "❌ Invalid amount.");
-  }
-
-  if (cash < 20) {
-    return bot.sendMessage(chatId, "❌ Minimum order is $20 (2g).");
+  if (isNaN(cash) || cash < 20 || cash % 5 !== 0) {
+    return bot.sendMessage(chatId, "❌ Minimum $20, increments of $5.");
   }
 
   const grams = cash / 10;
-  if (grams % 0.5 !== 0) {
-    return bot.sendMessage(chatId, "❌ Amount must convert to .5g increments.");
-  }
 
-  sessions[chatId] = {
-    state: "confirm",
-    grams,
-    cash
-  };
+  sessions[chatId] = { state: "confirm", grams, cash };
 
   bot.sendMessage(
     chatId,
-    `🧾 *Order Summary*\n\n` +
-    `Products:\n` +
-    `• God Complex\n` +
-    `• Killer Green Budz\n\n` +
-    `⚖️ ${grams}g total\n` +
-    `💰 $${cash}\n\n` +
-    `Confirm order?`,
+    `🧾 *Order Summary*\n\n⚖️ ${grams}g\n💰 $${cash}\n\nConfirm?`,
     {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "✅ Confirm Order", callback_data: "confirm" }],
-          [{ text: "❌ Cancel", callback_data: "cancel" }]
+          [{ text: "✅ Confirm Order", callback_data: "user_confirm" }],
+          [{ text: "❌ Cancel", callback_data: "user_cancel" }]
         ]
       }
     }
   );
 });
 
-// -------------------------------
-// CONFIRM / CANCEL
-// -------------------------------
+// ---------------- CALLBACKS ----------------
 bot.on('callback_query', q => {
   const chatId = q.message.chat.id;
-  const session = sessions[chatId];
-  if (!session || session.state !== "confirm") return;
 
-  if (q.data === "cancel") {
+  // USER CANCEL
+  if (q.data === "user_cancel") {
     sessions[chatId] = null;
-    return bot.editMessageText(
-      "❌ Order cancelled.",
-      { chat_id: chatId, message_id: q.message.message_id }
-    );
+    return bot.editMessageText("❌ Order cancelled.", {
+      chat_id: chatId,
+      message_id: q.message.message_id
+    });
   }
 
-  if (q.data === "confirm") {
+  // USER CONFIRM
+  if (q.data === "user_confirm") {
+    const s = sessions[chatId];
+    if (!s) return;
+
+    const orderId = Date.now().toString();
+    orders[orderId] = {
+      userId: chatId,
+      grams: s.grams,
+      cash: s.cash
+    };
+
     const user =
       q.from.username
         ? `@${q.from.username}`
         : `[User](tg://user?id=${chatId})`;
 
-    const receipt =
-`🧾 *New Order*
-👤 ${user}
-⚖️ ${session.grams}g
-💰 $${session.cash}
-📦 Products:
-• God Complex
-• Killer Green Budz`;
-
     ADMIN_IDS.forEach(id => {
-      bot.sendMessage(id, receipt, { parse_mode: "Markdown" }).catch(() => {});
+      bot.sendMessage(
+        id,
+        `🧾 *New Order*\n👤 ${user}\n⚖️ ${s.grams}g\n💰 $${s.cash}\n\nSelect product:`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "🟢 God Complex", callback_data: `prod_GOD_${orderId}` },
+                { text: "🌿 Killer Green Budz", callback_data: `prod_KGB_${orderId}` }
+              ],
+              [
+                { text: "❌ Reject", callback_data: `reject_${orderId}` }
+              ]
+            ]
+          }
+        }
+      );
     });
 
-    addXP(chatId, 2);
     sessions[chatId] = null;
+    return bot.editMessageText("📨 Order sent to admins.", {
+      chat_id: chatId,
+      message_id: q.message.message_id
+    });
+  }
+
+  // ADMIN PRODUCT SELECT
+  if (q.data.startsWith("prod_")) {
+    const [, product, orderId] = q.data.split("_");
+    const order = orders[orderId];
+    if (!order) return;
+
+    order.product = product === "GOD" ? "God Complex" : "Killer Green Budz";
 
     bot.editMessageText(
-      "✅ Order confirmed. Admins have been notified 🌱",
-      { chat_id: chatId, message_id: q.message.message_id }
+      `✅ Product selected: ${order.product}\n\nAccept order?`,
+      {
+        chat_id: q.message.chat.id,
+        message_id: q.message.message_id,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "✅ Accept Order", callback_data: `accept_${orderId}` }],
+            [{ text: "❌ Reject", callback_data: `reject_${orderId}` }]
+          ]
+        }
+      }
     );
+  }
+
+  // ADMIN ACCEPT
+  if (q.data.startsWith("accept_")) {
+    const orderId = q.data.split("_")[1];
+    const order = orders[orderId];
+    if (!order) return;
+
+    addXP(order.userId, 2);
+
+    bot.sendMessage(
+      order.userId,
+      `✅ *Order Accepted*\n\nProduct: ${order.product}\n⚖️ ${order.grams}g\n💰 $${order.cash}`,
+      { parse_mode: "Markdown" }
+    );
+
+    delete orders[orderId];
+    return bot.editMessageText("✅ Order accepted & user notified.", {
+      chat_id: q.message.chat.id,
+      message_id: q.message.message_id
+    });
+  }
+
+  // ADMIN REJECT
+  if (q.data.startsWith("reject_")) {
+    const orderId = q.data.split("_")[1];
+    const order = orders[orderId];
+    if (order) {
+      bot.sendMessage(order.userId, "❌ Your order was rejected.");
+      delete orders[orderId];
+    }
+    return bot.editMessageText("❌ Order rejected.", {
+      chat_id: q.message.chat.id,
+      message_id: q.message.message_id
+    });
   }
 });
