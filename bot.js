@@ -1,173 +1,168 @@
-// V1LEFarm Bot — Full Advanced Version
+   // ===============================
+// V1LEFarm Telegram Bot — FINAL v2
+// ===============================
 
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
-// --- Config ---
+// ---------- ENV ----------
 const TOKEN = process.env.BOT_TOKEN;
-const ADMIN_IDS = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(',').map(x => Number(x)) : [];
-const DB_FILE = 'users.json';
+const ADMIN_IDS = process.env.ADMIN_IDS
+  ? process.env.ADMIN_IDS.split(',').map(Number)
+  : [];
 
-// --- Load Users ---
-let users = {};
-if (fs.existsSync(DB_FILE)) users = JSON.parse(fs.readFileSync(DB_FILE));
-
-// --- Initialize Bot ---
-const bot = new TelegramBot(TOKEN, { polling: true });
-console.log('✅ V1LEFarm Bot started');
-
-// --- Products ---
-const PRODUCTS = [
-  { name: 'God Complex', emoji: '🟢', price: 10 },
-  { name: 'Killer Green Budz', emoji: '🌿', price: 10 }
-];
-
-// --- Sessions ---
-const sessions = {};
-
-// --- Helpers ---
-function saveUsers(){ fs.writeFileSync(DB_FILE, JSON.stringify(users,null,2)); }
-
-function ensureUser(chatId){
-  if(!users[chatId]) users[chatId] = { xp: 0, level: 1 };
+if (!TOKEN || ADMIN_IDS.length === 0) {
+  console.error("❌ BOT_TOKEN or ADMIN_IDS missing");
+  process.exit(1);
 }
 
-function addXP(chatId, amount){
-  ensureUser(chatId);
-  users[chatId].xp += amount;
-  while(users[chatId].xp >= users[chatId].level * 5){
-    users[chatId].xp -= users[chatId].level * 5;
-    users[chatId].level += 1;
-    bot.sendMessage(chatId, `🎉 Congrats! You reached Level ${users[chatId].level}!`);
+const bot = new TelegramBot(TOKEN, { polling: true });
+console.log("✅ Bot started");
+
+// ===============================
+// USER / XP SYSTEM
+// ===============================
+const DB_FILE = './users.json';
+
+let users = fs.existsSync(DB_FILE)
+  ? JSON.parse(fs.readFileSync(DB_FILE))
+  : {};
+
+function saveUsers() {
+  fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
+}
+
+function ensureUser(id) {
+  if (!users[id]) users[id] = { xp: 0, level: 1 };
+}
+
+function xpNeeded(level) {
+  return level * 10;
+}
+
+function addXP(id, amount) {
+  ensureUser(id);
+  users[id].xp += amount;
+
+  while (users[id].xp >= xpNeeded(users[id].level)) {
+    users[id].xp -= xpNeeded(users[id].level);
+    users[id].level++;
   }
   saveUsers();
 }
 
-function xpBar(xp, level){
-  const total = level*5;
-  const filled = Math.round((xp/total)*10);
-  const empty = 10 - filled;
-  return '⭐'.repeat(filled) + '⚪'.repeat(empty) + ` (${xp}/${total} XP)`;
-}
+// ===============================
+// PRODUCTS
+// ===============================
+const PRODUCTS = {
+  god: { name: "God Complex", price: 10 },
+  kgb: { name: "Killer Green Budz", price: 10 }
+};
 
-function sendToAdmins(msg, options={}){
-  ADMIN_IDS.forEach(id => bot.sendMessage(id, msg, options).catch(()=>{}));
-}
+// ===============================
+// STATE
+// ===============================
+const sessions = {};
+const orders = {};
 
-// --- Start Command ---
+// ===============================
+// /start
+// ===============================
 bot.onText(/\/start/, msg => {
   const chatId = msg.chat.id;
   ensureUser(chatId);
-  sessions[chatId] = { step: 'product' };
   addXP(chatId, 1);
 
-  const bar = xpBar(users[chatId].xp, users[chatId].level);
+  sessions[chatId] = { step: "product" };
 
-  bot.sendMessage(chatId,
-    `🌱 *Welcome to V1LEFarm*\n\n⭐ Level: *${users[chatId].level}*\nXP: ${bar}\n\nSelect a product:`,
+  bot.sendMessage(
+    chatId,
+    `💥 *Welcome to Root Tree*\n\n⭐ Level: *${users[chatId].level}*\n`,
     {
-      parse_mode: 'Markdown',
+      parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [
-          [{ text: `${PRODUCTS[0].emoji} ${PRODUCTS[0].name}`, callback_data: `product_0` }],
-          [{ text: `${PRODUCTS[1].emoji} ${PRODUCTS[1].name}`, callback_data: `product_1` }]
+          [{ text: "🪴 God Complex", callback_data: "product_god" }],
+          [{ text: "🪴 Killer Green Budz", callback_data: "product_kgb" }]
         ]
       }
     }
   );
 });
 
-// --- Callback Queries ---
-bot.on('callback_query', query => {
-  const chatId = query.message.chat.id;
-  const msgId = query.message.message_id;
-  const data = query.data;
+// ===============================
+// CALLBACKS
+// ===============================
+bot.on('callback_query', q => {
+  const chatId = q.message.chat.id;
+  const data = q.data;
 
-  ensureUser(chatId);
-  if(!sessions[chatId]) sessions[chatId] = { step: 'product' };
-  const session = sessions[chatId];
+  // ----- Product select -----
+  if (data.startsWith("product_")) {
+    const key = data.split("_")[1];
+    sessions[chatId] = { step: "cash", product: key };
 
-  const username = query.from.username ? `@${query.from.username}` : query.from.first_name || 'User';
-  const userLink = `[${username}](tg://user?id=${chatId})`;
-
-  // --- Product Selection ---
-  if(data.startsWith('product_') && session.step==='product'){
-    const prodIndex = parseInt(data.split('_')[1]);
-    session.product = prodIndex;
-    session.step = 'amount';
-    const product = PRODUCTS[prodIndex];
-    bot.editMessageText(
-      `You chose: ${product.name}\nMinimum 2g, add by 0.5g. $${product.price} per gram.\n\nType the amount you want in $ (e.g., 20) or grams (e.g., 2.5):`,
-      { chat_id: chatId, message_id: msgId }
+    return bot.editMessageText(
+      `✅ *${PRODUCTS[key].name} selected*\n\n💰 $10 per gram\n📦 Minimum 2g ($20)\n\n✏️ Type cash amount (example: \`$25\`)`,
+      { chat_id: chatId, message_id: q.message.message_id, parse_mode: "Markdown" }
     );
-    return;
   }
 
-  // --- Accept/Reject Admin Buttons ---
-  if(data.startsWith('admin_accept_')){
-    const [_, chatStr, productIndex, grams, cash] = data.split('_');
-    const targetChat = parseInt(chatStr);
-    const product = PRODUCTS[parseInt(productIndex)];
-    bot.sendMessage(targetChat, `✅ Your order for ${grams}g ${product.name} ($${cash}) has been accepted by an admin.`);
-    bot.editMessageText(`✅ Accepted by admin`, { chat_id: chatId, message_id: msgId });
-    return;
-  }
+  // ----- Confirm order -----
+  if (data === "confirm_order") {
+    const s = sessions[chatId];
+    if (!s) return;
 
-  if(data.startsWith('admin_reject_')){
-    const [_, chatStr, productIndex, grams, cash] = data.split('_');
-    const targetChat = parseInt(chatStr);
-    const product = PRODUCTS[parseInt(productIndex)];
-    bot.sendMessage(targetChat, `❌ Your order for ${grams}g ${product.name} ($${cash}) has been rejected by an admin.`);
-    bot.editMessageText(`❌ Rejected by admin`, { chat_id: chatId, message_id: msgId });
-    return;
-  }
-});
+    const orderId = Date.now().toString();
+    orders[orderId] = {
+      ...s,
+      userId: chatId,
+      status: "pending",
+      adminMessages: {}
+    };
 
-// --- Text Messages (amount input) ---
-bot.on('message', msg => {
-  const chatId = msg.chat.id;
-  if(!sessions[chatId] || !sessions[chatId].step) return;
-  const session = sessions[chatId];
+    const userLink = q.from.username
+      ? `@${q.from.username}`
+      : `[User](tg://user?id=${chatId})`;
 
-  // Ignore /start
-  if(msg.text.startsWith('/')) return;
+    ADMIN_IDS.forEach(adminId => {
+      bot.sendMessage(
+        adminId,
+        `🧾 *New Order*\n\n👤 ${userLink}\n📦 ${PRODUCTS[s.product].name}\n⚖️ ${s.grams}g\n💰 $${s.cash}\n⭐ Level: ${users[chatId].level}`,
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ Accept", callback_data: `admin_accept_${orderId}` },
+                { text: "❌ Reject", callback_data: `admin_reject_${orderId}` }
+              ]
+            ]
+          }
+        }
+      ).then(m => {
+        orders[orderId].adminMessages[adminId] = m.message_id;
+      });
+    });
 
-  if(session.step==='amount'){
-    const input = msg.text.trim();
-    const product = PRODUCTS[session.product];
-    let grams, cash;
+    sessions[chatId] = null;
 
-    if(input.startsWith('$')){
-      cash = parseFloat(input.replace('$',''));
-      if(isNaN(cash)) return bot.sendMessage(chatId,'❌ Invalid amount');
-      grams = +(cash/product.price).toFixed(1);
-      if(grams<2) grams=2;
-    } else {
-      grams = parseFloat(input);
-      if(isNaN(grams) || grams<2) return bot.sendMessage(chatId,'❌ Minimum is 2g');
-      grams = Math.round(grams*2)/2; // 0.5g increments
-      cash = +(grams*product.price).toFixed(2);
-    }
-
-    session.step='confirm';
-    session.grams = grams;
-    session.cash = cash;
-
-    const confirmKeyboard = ADMIN_IDS.map(id => [
-      { text: '✅ Accept', callback_data:`admin_accept_${chatId}_${session.product}_${grams}_${cash}` },
-      { text: '❌ Reject', callback_data:`admin_reject_${chatId}_${session.product}_${grams}_${cash}` }
-    ]);
-
-    sendToAdmins(
-      `📩 New Order from ${userLink}\nProduct: ${product.name}\nGrams: ${grams}g\n$${cash}`,
-      { parse_mode:'Markdown', reply_markup: { inline_keyboard: confirmKeyboard } }
+    return bot.editMessageText(
+      "📨 *Order sent to admins.*",
+      { chat_id: chatId, message_id: q.message.message_id, parse_mode: "Markdown" }
     );
-
-    bot.sendMessage(chatId,
-      `📝 Your order for ${grams}g ${product.name} ($${cash}) has been sent to admins.\nYour level: ${users[chatId].level}\nXP: ${xpBar(users[chatId].xp, users[chatId].level)}`,
-      { parse_mode: 'Markdown' }
-    );
-
-    addXP(chatId, 2); // XP per order
   }
-});
+
+  // ----- Cancel -----
+  if (data === "cancel_order") {
+    sessions[chatId] = null;
+    return bot.editMessageText(
+      "❌ Order cancelled.",
+      { chat_id: chatId, message_id: q.message.message_id }
+    );
+  }
+
+  // ----- Admin accept -----
+  if (data.startsWith("admin_accept_")) {
+    const id = data.split("_")[2];
+    const o = orders[id];
