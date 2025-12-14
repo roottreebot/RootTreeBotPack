@@ -1,16 +1,6 @@
 /**
  * === V1LE FARM BOT ===
- * Termux + PM2 safe
- * Features:
- * - Orders
- * - XP / Levels
- * - Weekly leaderboard
- * - Admin suite
- * - Order tracking
- * - Message cleanup
- * - Session persistence
- * - Sales stats
- * - CSV export
+ * Termux + PM2 + Polling SAFE
  */
 
 require('dotenv').config();
@@ -28,7 +18,13 @@ if (!TOKEN || !ADMIN_IDS.length) {
   process.exit(1);
 }
 
+// ================= BOT =================
 const bot = new TelegramBot(TOKEN, { polling: true });
+
+bot.deleteWebHook({ drop_pending_updates: true })
+  .then(() => console.log('🧹 Webhook cleared, polling active'))
+  .catch(() => console.log('ℹ️ No webhook to clear'));
+
 console.log('✅ Bot running');
 
 // ================= FILES =================
@@ -164,9 +160,7 @@ async function showMainMenu(id) {
   const pending = users[id].orders.filter(o => o.status === 'Pending');
   const pendingTxt = pending.length
     ? '📦 Pending Orders:\n' +
-      pending
-        .map(o => `• ${o.product} — ${o.grams}g — $${o.cash}`)
-        .join('\n') +
+      pending.map(o => `• ${o.product} — ${o.grams}g — $${o.cash}`).join('\n') +
       '\n\n'
     : '';
 
@@ -190,163 +184,11 @@ bot.onText(/\/start/, msg => {
   showMainMenu(msg.chat.id);
 });
 
-bot.onText(/\/profile/, msg => {
-  const id = msg.chat.id;
-  ensureUser(id, msg.from.username);
-
-  const orders =
-    users[id].orders.slice(-5).reverse().map(o =>
-      `• ${o.product} — ${o.grams}g — $${o.cash} — ${o.status}`
-    ).join('\n') || '_No orders_';
-
-  sendOrEdit(
-    id,
-    `${HEADER}
-🎚 Level: *${users[id].level}*
-📊 XP: ${xpBar(users[id].xp, users[id].level)}
-
-📦 Orders:
-${orders}`,
-    {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [[{ text: '🏠 Menu', callback_data: 'back_main' }]]
-      }
-    }
-  );
-});
-
-bot.onText(/\/top/, msg => {
-  checkWeeklyReset();
-  const top = Object.entries(users)
-    .sort((a, b) => b[1].weeklyXp - a[1].weeklyXp)
-    .slice(0, 10);
-
-  let txt = `${HEADER}\n🏆 Weekly Top\n\n`;
-  top.forEach(([id, u], i) => {
-    txt += `#${i + 1} @${u.username || 'user'} — XP ${u.weeklyXp}\n`;
-  });
-
-  sendOrEdit(msg.chat.id, txt, {
-    parse_mode: 'Markdown',
-    reply_markup: {
-      inline_keyboard: [[{ text: '🏠 Menu', callback_data: 'back_main' }]]
-    }
-  });
-});
-
-// ================= ADMIN =================
-bot.onText(/\/stats/, msg => {
-  if (!isAdmin(msg.chat.id)) return;
-
-  bot.sendMessage(
-    msg.chat.id,
-    `📊 Stats
-Users: ${Object.keys(users).length}
-Orders: ${meta.sales.totalOrders}
-Revenue: $${meta.sales.totalRevenue.toFixed(2)}`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-bot.onText(/\/export/, msg => {
-  if (!isAdmin(msg.chat.id)) return;
-
-  let csv = 'user,product,grams,price,status,time\n';
-  for (const u of Object.values(users)) {
-    for (const o of u.orders) {
-      csv += `${u.username || ''},${o.product},${o.grams},${o.cash},${o.status},${new Date(o.time).toISOString()}\n`;
-    }
-  }
-  fs.writeFileSync('sales_export.csv', csv);
-  bot.sendDocument(msg.chat.id, 'sales_export.csv');
-});
-
-// ================= CALLBACKS =================
-bot.on('callback_query', async q => {
-  const id = q.message.chat.id;
-  ensureUser(id, q.from.username);
-  const s = (sessions[id] ||= {});
-
-  if (q.data === 'back_main') return showMainMenu(id);
-
-  if (q.data.startsWith('product_')) {
-    s.product = q.data.replace('product_', '');
-    s.step = 'amount';
-
-    return sendOrEdit(
-      id,
-      `${HEADER}
-🌿 *${s.product}*
-Minimum 2g
-Price $10/g
-
-Send grams or $amount`,
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  if (q.data === 'confirm_order') {
-    const order = {
-      product: s.product,
-      grams: s.grams,
-      cash: s.cash,
-      status: 'Pending',
-      time: Date.now()
-    };
-
-    users[id].orders.push(order);
-    meta.sales.totalOrders++;
-    meta.sales.totalRevenue += s.cash;
-    addXP(id, 2);
-    saveAll();
-
-    for (const adminId of ADMIN_IDS) {
-      bot.sendMessage(
-        adminId,
-        `📦 New Order
-User: @${users[id].username || 'user'}
-${order.product}
-${order.grams}g — $${order.cash}`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: '✅ Accept', callback_data: `admin_accept_${id}` },
-                { text: '❌ Reject', callback_data: `admin_reject_${id}` }
-              ]
-            ]
-          }
-        }
-      );
-    }
-
-    return showMainMenu(id);
-  }
-
-  if (q.data.startsWith('admin_')) {
-    const [, act, uid] = q.data.split('_');
-    const order = users[uid].orders.at(-1);
-    if (!order || order.status !== 'Pending') return;
-
-    order.status = act === 'accept' ? '✅ Accepted' : '❌ Rejected';
-    saveAll();
-
-    bot.sendMessage(
-      uid,
-      act === 'accept'
-        ? '✅ Your order was accepted'
-        : '❌ Your order was rejected'
-    );
-
-    if (sessions[uid]) showMainMenu(uid);
-  }
-});
-
 // ================= MESSAGE INPUT =================
 bot.on('message', msg => {
   const id = msg.chat.id;
 
+  // Delete user messages
   if (!msg.from.is_bot) {
     setTimeout(() => {
       bot.deleteMessage(id, msg.message_id).catch(() => {});
@@ -397,9 +239,7 @@ bot.on('message', msg => {
 
 // ================= STARTUP PING =================
 for (const adminId of ADMIN_IDS) {
-  bot.sendMessage(
-    adminId,
-    '✅ *V1LE FARM BOT ONLINE*',
-    { parse_mode: 'Markdown' }
-  ).catch(() => {});
+  bot.sendMessage(adminId, '✅ *V1LE FARM BOT ONLINE*', {
+    parse_mode: 'Markdown'
+  }).catch(() => {});
 }
