@@ -1,4 +1,4 @@
-// === V1LE FARM BOT (FINAL FULL VERSION: SCROLLABLE LEADERBOARD + COMPLEX ASCII) ===
+// === V1LE FARM BOT (FINAL FULL VERSION: MOBILE ASCII + NO /PROFILE + YOUR RANK) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -67,7 +67,7 @@ const PRODUCTS={
   'Killer Green Budz':{price:10}
 };
 
-const COMMANDS_TEXT="📜 *Commands*\n/start – Main Menu\n/profile – Profile & Orders\n/help – Commands";
+const COMMANDS_TEXT="📜 *Commands*\n/start – Main Menu\n/help – Commands";
 
 // ================= XP =================
 function addXP(id,xp){
@@ -84,35 +84,23 @@ function xpBar(xp,lvl){
   return '🟩'.repeat(fill)+'⬜'.repeat(10-fill)+` ${xp}/${max}`;
 }
 
-// ================= ASCII =================
+// ================= MOBILE OPTIMIZED ASCII =================
 const ASCII_MAIN=`
-██████╗ ██╗   ██╗██╗     ███████╗
-██╔══██╗██║   ██║██║     ██╔════╝
-██████╔╝██║   ██║██║     █████╗
-██╔═══╝ ██║   ██║██║     ██╔══╝
-██║     ╚██████╔╝███████╗███████╗
-╚═╝      ╚═════╝ ╚══════╝╚══════╝
-V1LE FARM
+╔══════════════╗
+║  V1LE FARM   ║
+╚══════════════╝
 `;
 
-const ASCII_PROFILE=`
-██████╗ ██████╗ ██████╗ ██████╗
-██╔══██╗██╔══██╗██╔══██╗██╔══██╗
-██████╔╝██████╔╝██║  ██║██████╔╝
-██╔═══╝ ██╔═══╝ ██║  ██║██╔═══╝
-██║     ██║     ██████╔╝██║
-╚═╝     ╚═╝     ╚═════╝ ╚═╝
-PROFILE
+const ASCII_ORDER=`
+╔════════════════╗
+║   YOUR ORDER   ║
+╚════════════════╝
 `;
 
 const ASCII_LEADERBOARD=`
-██╗     ███████╗ █████╗ ██████╗ ██████╗ 
-██║     ██╔════╝██╔══██╗██╔══██╗██╔══██╗
-██║     █████╗  ███████║██████╔╝██████╔╝
-██║     ██╔══╝  ██╔══██║██╔═══╝ ██╔═══╝ 
-███████╗███████╗██║  ██║██║     ██║     
-╚══════╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝     
-LEADERBOARD
+╔════════════════╗
+║  TOP FARMERS   ║
+╚════════════════╝
 `;
 
 // ================= SESSIONS =================
@@ -152,11 +140,11 @@ function getLeaderboardPage(page=0,pageSize=10){
   const start=page*pageSize;
   const end=start+pageSize;
   const top=sorted.slice(start,end);
-  let txt=`${ASCII_LEADERBOARD}\n🏆 *Weekly Top Farmers*\n\n`;
+  let txt=`${ASCII_LEADERBOARD}\n`;
   top.forEach(([uid,u],i)=>{
     const uname=u.username?`@${u.username}`:'User';
     const link=`[${uname}](tg://user?id=${uid})`;
-    txt+=`#${start+i+1} — ${link} — Level ${u.level} — XP ${u.weeklyXp}\n`;
+    txt+=`#${start+i+1} — ${link} — L${u.level} XP:${u.weeklyXp}\n`;
   });
   return txt;
 }
@@ -167,6 +155,14 @@ function getLeaderboardKeyboard(page=0,pageSize=10){
   if(page>0) kb[0].push({text:'⬅️ Prev',callback_data:`leaderboard_${page-1}`});
   if((page+1)<totalPages) kb[0].push({text:'Next ➡️',callback_data:`leaderboard_${page+1}`});
   return kb.length>0?kb:[];
+}
+
+// ================= USER RANK =================
+function getUserRank(id){
+  const sorted=Object.entries(users).filter(([,u])=>!u.banned)
+    .sort((a,b)=>b[1].weeklyXp-a[1].weeklyXp);
+  const index=sorted.findIndex(([uid])=>uid==id);
+  return index>=0?index+1:'N/A';
 }
 
 // ================= MAIN MENU =================
@@ -186,6 +182,9 @@ async function showMainMenu(id,page=0){
       return `${statusIcon} ${o.product} — ${o.grams}g — $${o.cash} — *${o.status}*`;
     }).join('\n')+'\n\n':'';
 
+  const rank=getUserRank(id);
+  const rankTxt=`🏅 Your Rank: #${rank}`;
+
   await sendOrEdit(id,
 `${ASCII_MAIN}
 🎚 Level: ${users[id].level}
@@ -193,30 +192,10 @@ async function showMainMenu(id,page=0){
 ${pendingTxt}🛒 Select a product 👇
 ${COMMANDS_TEXT}
 
-${getLeaderboardPage(page)}`,
+${getLeaderboardPage(page)}
+
+${rankTxt}`,
   {parse_mode:'Markdown',reply_markup:{inline_keyboard:[...kb,...getLeaderboardKeyboard(page)]}});
-}
-
-// ================= PROFILE =================
-async function showProfile(id,page=0){
-  ensureUser(id);
-  const orders=users[id].orders.slice(-10).reverse()
-    .map(o=>{
-      let statusIcon='⚪';
-      if(o.status==='✅ Accepted') statusIcon='🟢';
-      else if(o.status==='❌ Rejected') statusIcon='🔴';
-      return `${statusIcon} ${o.product} — ${o.grams}g — $${o.cash} — *${o.status}*`;
-    }).join('\n')||'_No orders yet_';
-  await sendOrEdit(id,
-`${ASCII_PROFILE}
-🎚 Level: ${users[id].level}
-📊 XP: ${xpBar(users[id].xp,users[id].level)}
-📦 Recent Orders:
-${orders}
-${COMMANDS_TEXT}
-
-${getLeaderboardPage(page)}`,
-  {parse_mode:'Markdown',reply_markup:{inline_keyboard:[[ {text:'🏠 Back to Menu',callback_data:'back_main'} ],...getLeaderboardKeyboard(page)]}});
 }
 
 // ================= START / HELP =================
@@ -236,7 +215,7 @@ bot.on('callback_query',async q=>{
   const s=sessions[id];
 
   if(q.data==='back_main') return showMainMenu(id);
-  if(q.data.startsWith('product_')){ s.product=q.data.replace('product_',''); s.step='amount'; return sendOrEdit(id,`${ASCII_MAIN}\n🌿 *${s.product}*\n▫️ Minimum: 2g\n▫️ Price: $10/g\n✏️ Send grams or $ amount`,{parse_mode:'Markdown'});}
+  if(q.data.startsWith('product_')){ s.product=q.data.replace('product_',''); s.step='amount'; return sendOrEdit(id,`${ASCII_ORDER}\n🌿 *${s.product}*\n▫️ Minimum: 2g\n▫️ Price: $10/g\n✏️ Send grams or $ amount`,{parse_mode:'Markdown'});}
   if(q.data==='confirm_order'){
     const order={...s,status:'Pending',time:Date.now()};
     users[id].orders.push(order);
@@ -246,16 +225,16 @@ bot.on('callback_query',async q=>{
     if(!s.adminMsgIds) s.adminMsgIds=[];
     for(const adminId of ADMIN_IDS){
       const sentMsg=await bot.sendMessage(adminId,
-`████████████████████████████████
-█       NEW ORDER RECEIVED        █
-█ User: @${username||id}
-█ Product: ${order.product}
-█ Grams: ${order.grams}g
-█ Price: $${order.cash}
-█ Status: ⚪ Pending
-████████████████████████████████`,
+`══════════════════
+   NEW ORDER
+User: @${username||id}
+Product: ${order.product}
+Grams: ${order.grams}g
+Price: $${order.cash}
+Status: ⚪ Pending
+══════════════════`,
       {parse_mode:'Markdown',
-       reply_markup:{inline_keyboard:[[{text:'✅ Accept',callback_data:`admin_accept_${id}_${users[id].orders.length-1}`},{text:'❌ Reject',callback_data:`admin_reject_${id}_${users[id].orders.length-1}`}]]}});
+       reply_markup:{inline_keyboard:[[{text:'✅ Accept',callback_data:`admin_accept_${id}_${users[id].orders.length-1}`},{text:'❌ Reject',callback_data:`admin_reject_${id}_${users[id].orders.length-1`}]]}});
       s.adminMsgIds.push({adminId,msgId:sentMsg.message_id,orderIndex:users[id].orders.length-1});
     }
     return showMainMenu(id);
@@ -278,14 +257,14 @@ bot.on('callback_query',async q=>{
     const uname=users[userId].username||userId;
     const statusIcon=order.status==='✅ Accepted'?'🟢':'🔴';
     const orderASCII=`
-████████████████████████████████
-█       ORDER PROCESSING        █
-█ User: ${uname}
-█ Product: ${order.product}
-█ Grams: ${order.grams}g
-█ Price: $${order.cash}
-█ Status: ${statusIcon} ${order.status}
-████████████████████████████████
+══════════════════
+   ORDER PROCESSING
+User: ${uname}
+Product: ${order.product}
+Grams: ${order.grams}g
+Price: $${order.cash}
+Status: ${statusIcon} ${order.status}
+══════════════════
 `;
     bot.sendMessage(userId,
       order.status==='✅ Accepted'
@@ -317,7 +296,7 @@ bot.on('message',msg=>{
   if(!grams||grams<2) return sendOrEdit(id,'❌ Minimum 2g');
   s.grams=grams; s.cash=cash;
   sendOrEdit(id,
-`${ASCII_MAIN}\n🧾 Order Summary\n🌿 ${s.product}\n⚖️ ${grams}g\n💲 $${cash}`,
+`${ASCII_ORDER}\n🧾 Order Summary\n🌿 ${s.product}\n⚖️ ${grams}g\n💲 $${cash}`,
   {parse_mode:'Markdown',
    reply_markup:{inline_keyboard:[[{text:'✅ Confirm',callback_data:'confirm_order'}],[{text:'🏠 Back to Menu',callback_data:'back_main'}]]}});
 });
