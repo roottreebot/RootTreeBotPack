@@ -1,15 +1,20 @@
-#!/bin/bash
-set -e
-echo "=== Installing V1LEFarm Bot ==="
+#!/data/data/com.termux/files/usr/bin/bash
+# === V1LE FARM BOT INSTALLER ===
 
-if [ ! -f ".env" ]; then
-  echo "ERROR: .env file not found! Copy .env.example to .env and fill values."
-  exit 1
-fi
+echo "📦 Installing V1LE FARM Bot dependencies..."
 
+# Update packages
+pkg update -y
+pkg upgrade -y
+
+# Install Node.js and npm if not installed
+pkg install nodejs -y
+
+# Install git if not installed
+pkg install git -y
+
+# Install dependencies
 npm install
-pm2 delete v1lefarmbot || true
-pm2 start bot.js --name v1lefarmbot
-pm2 save
 
-echo "✅ Bot installed & started."
+echo "✅ Installation complete!"
+echo "Run the bot with: npm start"
