@@ -86,23 +86,23 @@ function xpBar(xp,lvl){
 
 // ================= ASCII =================
 const ASCII_MAIN=`
-╔═══════════╗
+╔═════════╗
 ║  V1LE FARM║
-╚═══════════╝
+╚═════════╝
 V1LE FARM
 `;
 
 const ASCII_PROFILE=`
-╔═════════════╗
+╔═══════════╗
 ║   YOUR ORDER║
-╚═════════════╝
+╚═══════════╝
 PROFILE
 `;
 
 const ASCII_LEADERBOARD=`
-╔═════════════╗
+╔═══════════╗
 ║  TOP FARMERS║
-╚═════════════╝
+╚═══════════╝
 LEADERBOARD
 `;
 
