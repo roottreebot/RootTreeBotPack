@@ -67,7 +67,7 @@ const HEADER=`
 function checkWeeklyReset(){ if(Date.now()-meta.weeklyReset>=WEEK_MS){ for(const u of Object.values(users)) u.weeklyXp=0; meta.weeklyReset=Date.now(); saveAll(); } }
 
 // ================== RATE LIMIT ==================
-function isRateLimited(id){ const now=Date.now(); if(!lastAction[id]){ lastAction[id]=now; return false;} if(now-lastAction[id]<RATE_LIMIT_MS) return true; lastAction[id]=now; lastAction[id]=now; return false; }
+function isRateLimited(id){ const now=Date.now(); if(!lastAction[id]){ lastAction[id]=now; return false;} if(now-lastAction[id]<RATE_LIMIT_MS) return true; lastAction[id]=now; return false; }
 
 // ================== SEND OR EDIT ==================
 async function sendOrEdit(id,text,opt={}){ if(!sessions[id]) sessions[id]={}; const mid=sessions[id].mainMsgId; try{ if(mid){ await bot.editMessageText(text,{chat_id:id,message_id:mid,...opt}); return;} }catch{} const m=await bot.sendMessage(id,text,opt); sessions[id].mainMsgId=m.message_id; saveAll(); }
