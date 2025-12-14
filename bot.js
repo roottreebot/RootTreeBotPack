@@ -61,7 +61,7 @@ function banGuard(id){
   return false;
 }
 
-const COMMANDS_TEXT="📜 *Commands*\n/start – Main Menu\n/help – Commands";
+const COMMANDS_TEXT="📜 *Commands*\nGod Complex – Dirty Strong Buds\nKiller Green Budz – Strong Green Buds";
 
 // ================= CONFIG =================
 const PRODUCTS={
@@ -269,14 +269,14 @@ bot.on('callback_query',async q=>{
     const uname=users[userId].username||userId;
     const statusIcon=order.status==='✅ Accepted'?'🟢':'🔴';
     const orderASCII=`
-████████████████████████████████
-█       ORDER PROCESSING        █
-█ User: ${uname}
-█ Product: ${order.product}
-█ Grams: ${order.grams}g
-█ Price: $${order.cash}
-█ Status: ${statusIcon} ${order.status}
-████████████████████████████████
+
+       ORDER PROCESSING        
+ User: ${uname}
+ Product: ${order.product}
+ Grams: ${order.grams}g
+ Price: $${order.cash}
+ Status: ${statusIcon} ${order.status}
+
 `;
     bot.sendMessage(userId,
       order.status==='✅ Accepted'
