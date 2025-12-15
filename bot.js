@@ -61,7 +61,7 @@ function banGuard(id){
   return false;
 }
 
-const COMMANDS_TEXT="📜 *Strains*\n*God Complex* – Dirty Strong Buds\n*Killer Green Budz* – Strong Green Buds";
+const COMMANDS_TEXT="📜 *Strains*\n*Test God Complex* – Dirty Strong Buds\n*Killer Green Budz* – Strong Green Buds";
 
 // ================= CONFIG =================
 const PRODUCTS={
