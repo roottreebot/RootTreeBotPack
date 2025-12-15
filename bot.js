@@ -200,7 +200,7 @@ async function showMainMenu(id,page=0){
   sessions[id]=sessions[id]||{};
   sessions[id].step=null;
 
-  const kb=Object.keys(PRODUCTS).map(p=>[{text:`🌿 ${p}`,callback_data:`product_${p}`}]);
+  const kb=Object.keys(PRODUCTS).map(p=>[{text:`🪴 ${p}`,callback_data:`product_${p}`}]);
 
   const pendingOrders=users[id].orders;
   const pendingTxt=pendingOrders.length?'📦 *Your Orders:*\n'+
