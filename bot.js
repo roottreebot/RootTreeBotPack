@@ -1,4 +1,4 @@
-// === V1LE FARM BOT (FULL FINAL WITH STORE STATUS) ===
+// === V1LE FARM BOT (FINAL WITH ORDER XP PROGRESS BAR) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -186,7 +186,7 @@ async function showMainMenu(id, lbPage = 0) {
 `${ASCII_MAIN}
 ${storeStatus}
 🎚 Level: ${u.level}
-📊 XP: ${xpBar(u.xp, u.level)}
+📊 XP: ${xpBar(u.xp, u.level)}  ← Progress to next level
 
 📦 *Your Orders*
 ${orders}
@@ -288,16 +288,21 @@ Status: ⚪ Pending`,
 
     order.status = action === 'accept' ? '✅ Accepted' : '❌ Rejected';
 
+    // Send message to user with auto-delete after 5s
     if (action === 'accept') {
       giveXP(userId, order.pendingXP);
       delete order.pendingXP;
-      bot.sendMessage(userId, '✅ Order accepted!');
+      bot.sendMessage(userId, '✅ Your order has been accepted!').then(msg => {
+        setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000);
+      });
     } else {
-      bot.sendMessage(userId, '❌ Order rejected.');
-      setTimeout(() => {
-        users[userId].orders = users[userId].orders.filter(o => o !== order);
-        saveAll();
-      }, 10 * 60 * 1000);
+      bot.sendMessage(userId, '❌ Your order has been rejected!').then(msg => {
+        setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000);
+        setTimeout(() => {
+          users[userId].orders = users[userId].orders.filter(o => o !== order);
+          saveAll();
+        }, 5000);
+      });
     }
 
     const adminText = `🧾 *ORDER UPDATED*
@@ -326,9 +331,7 @@ bot.on('message', msg => {
   ensureUser(id, msg.from.username);
 
   if (!msg.from.is_bot) {
-    setTimeout(() => {
-      bot.deleteMessage(id, msg.message_id).catch(() => {});
-    }, 2000);
+    setTimeout(() => bot.deleteMessage(id, msg.message_id).catch(() => {}), 2000);
   }
 
   const text = msg.text?.trim();
