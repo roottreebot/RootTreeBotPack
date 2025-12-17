@@ -1,4 +1,4 @@
-// === V1LE FARM BOT (FULL FINAL WITH WEEKLY RESET & BAN CONFIRM) ===
+// === V1LE FARM BOT (FULL FINAL WITH STORE STATUS) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -21,7 +21,7 @@ const META_FILE = 'meta.json';
 let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
 let meta = fs.existsSync(META_FILE)
   ? JSON.parse(fs.readFileSync(META_FILE))
-  : { weeklyReset: Date.now() };
+  : { weeklyReset: Date.now(), storeOpen: true };
 
 function saveAll() {
   fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
@@ -123,7 +123,6 @@ function checkWeeklyReset() {
   }
 }
 
-// Run the weekly reset check every hour
 setInterval(checkWeeklyReset, 60 * 60 * 1000);
 
 // ================= LEADERBOARD =================
@@ -165,16 +164,27 @@ async function showMainMenu(id, lbPage = 0) {
 
   const lb = getLeaderboard(lbPage);
 
-  const kb = [
+  let kb = [
     ...Object.keys(PRODUCTS).map(p => [
       { text: `🪴 ${p}`, callback_data: `product_${p}` }
     ]),
     ...lb.buttons
   ];
 
+  // Admin store buttons
+  if (ADMIN_IDS.includes(id)) {
+    const storeBtn = meta.storeOpen
+      ? { text: '🔴 Close Store', callback_data: 'store_close' }
+      : { text: '🟢 Open Store', callback_data: 'store_open' };
+    kb.push([storeBtn]);
+  }
+
+  const storeStatus = meta.storeOpen ? '🟢 Store Open' : '🔴 Store Closed';
+
   await sendOrEdit(
     id,
 `${ASCII_MAIN}
+${storeStatus}
 🎚 Level: ${u.level}
 📊 XP: ${xpBar(u.xp, u.level)}
 
@@ -195,8 +205,19 @@ bot.onText(/\/start|\/help/, msg => {
 bot.on('callback_query', async q => {
   const id = q.message.chat.id;
   ensureUser(id, q.from.username);
-
   const s = sessions[id] || (sessions[id] = {});
+
+  // Admin store open/close
+  if (q.data === 'store_open' && ADMIN_IDS.includes(id)) {
+    meta.storeOpen = true;
+    saveAll();
+    return showMainMenu(id);
+  }
+  if (q.data === 'store_close' && ADMIN_IDS.includes(id)) {
+    meta.storeOpen = false;
+    saveAll();
+    return showMainMenu(id);
+  }
 
   if (q.data.startsWith('lb_')) {
     const page = Math.max(0, Number(q.data.split('_')[1]));
@@ -206,14 +227,20 @@ bot.on('callback_query', async q => {
   if (q.data === 'back_main') return showMainMenu(id, 0);
 
   if (q.data.startsWith('product_')) {
+    if (!meta.storeOpen) {
+      return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Orders are disabled.', show_alert: true });
+    }
     s.product = q.data.replace('product_', '');
     s.step = 'amount';
     return sendOrEdit(id, `${ASCII_MAIN}\n✏️ Send grams or $ amount`);
   }
 
   if (q.data === 'confirm_order') {
-    const xp = Math.floor(2 + s.cash * 0.5);
+    if (!meta.storeOpen) {
+      return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Cannot confirm order.', show_alert: true });
+    }
 
+    const xp = Math.floor(2 + s.cash * 0.5);
     const order = {
       product: s.product,
       grams: s.grams,
