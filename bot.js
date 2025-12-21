@@ -159,12 +159,28 @@ bot.on('callback_query', async q => {
   const id = q.message.chat.id;
   ensureUser(id, q.from.username);
   await bot.answerCallbackQuery(q.id).catch(() => {});
+
   if (!sessions[id]) sessions[id] = {};
   const s = sessions[id];
 
-  // Spam lock 30s
-  if (s.lockedUntil && Date.now() < s.lockedUntil) return;
-  s.lockedUntil = Date.now() + 30_000;
+  // Initialize userButtonTimestamps map if it doesn't exist
+  if (!s.userButtonTimestamps) s.userButtonTimestamps = {};
+
+  const buttonKey = q.data; // Use callback_data as key
+  const now = Date.now();
+  const lastPress = s.userButtonTimestamps[buttonKey] || 0;
+
+  // Ignore if same button pressed within last 3 seconds
+  if (lastPress && (now - lastPress < 3000)) {
+    return; // Do not process this spam click
+  }
+
+  // Update last press timestamp
+  s.userButtonTimestamps[buttonKey] = now;
+
+  // Remove or comment out your existing 30s lock
+  // if (s.lockedUntil && Date.now() < s.lockedUntil) return;
+  // s.lockedUntil = Date.now() + 30_000;
 
   try {
     if (q.data === 'reload') { await showMainMenu(id, 0, true); return; }
@@ -234,27 +250,4 @@ bot.on('callback_query', async q => {
     }
 
   } catch (err) { console.error(err); }
-});
-
-// ================= USER INPUT =================
-bot.on('message', msg => {
-  const id = msg.chat.id;
-  ensureUser(id, msg.from.username);
-  if (!msg.from.is_bot) setTimeout(() => bot.deleteMessage(id, msg.message_id).catch(() => {}), 2000);
-
-  const s = sessions[id];
-  if (!s || s.step !== 'amount' || (s.lockedUntil && Date.now() < s.lockedUntil)) return;
-  s.lockedUntil = Date.now() + 30_000;
-
-  const price = PRODUCTS[s.product].price;
-  let grams, cash;
-  if (msg.text.startsWith('$')) { cash = parseFloat(msg.text.slice(1)); grams = +(cash / price).toFixed(1); } 
-  else { grams = Math.round(parseFloat(msg.text) * 2) / 2; cash = +(grams * price).toFixed(2); }
-  if (!grams || grams < 2) { s.lockedUntil = 0; return; }
-
-  s.grams = grams; s.cash = cash;
-
-  if (s.msgIds && s.msgIds.length) { s.msgIds.forEach(mid => bot.deleteMessage(id, mid).catch(() => {})); s.msgIds = []; }
-
-  bot.sendMessage(id, `${ASCII_MAIN}\n🧾 *Order Summary*\n🌿 *${s.product}*\n⚖️ ${grams}g\n💲 $${cash}`, { reply_markup: { inline_keyboard: [[{ text: '✅ Confirm', callback_data: 'confirm' }], [{ text: '🏠 Back', callback_data: 'back' }]] }, parse_mode: 'Markdown' }).then(m => s.msgIds.push(m.message_id));
 });
