@@ -292,7 +292,7 @@ bot.on('message', msg => {
 
   const s = sessions[id];
   if (!s || s.step !== 'amount' || (s.lockedUntil && Date.now() < s.lockedUntil)) return;
-  s.lockedUntil = Date.now() + 02_000; // lock 30s
+  s.lockedUntil = Date.now() + 0_000; // lock 30s
 
   const price = PRODUCTS[s.product].price;
   let grams, cash;
