@@ -1,6 +1,7 @@
-// === V1LE FARM BOT (FINAL – SINGLE MAIN MENU, TEMP ORDER SUMMARY, BOLD FONTS + FULL BUTTON LOCK) ===
+// === V1LE FARM BOT (FULL: SINGLE MAIN MENU, TEMP ORDER SUMMARY, BUTTON LOCK, BACKUPS + INLINE SPAM PREVENTION) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
+const path = require('path');
 
 const TOKEN = process.env.BOT_TOKEN;
 const ADMIN_IDS = process.env.ADMIN_IDS?.split(',').map(Number) || [];
@@ -15,7 +16,11 @@ const bot = new TelegramBot(TOKEN, { polling: true });
 // ================= FILES =================
 const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
+const BACKUP_DIR = './backups';
 
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
+
+// ================= SAFE SAVE =================
 function safeSave(file, data) {
   fs.writeFileSync(file + '.tmp', JSON.stringify(data, null, 2));
   fs.renameSync(file + '.tmp', file);
@@ -32,6 +37,22 @@ function saveAll() {
   safeSave(DB_FILE, users);
   safeSave(META_FILE, meta);
 }
+
+// ================= BACKUPS =================
+function backupData() {
+  const timestamp = Date.now();
+  const filename = path.join(BACKUP_DIR, `backup_${timestamp}.json`);
+  fs.writeFileSync(filename, JSON.stringify({ users, meta }, null, 2));
+  
+  // Keep last 24 backups
+  const files = fs.readdirSync(BACKUP_DIR).sort();
+  while (files.length > 24) {
+    fs.unlinkSync(path.join(BACKUP_DIR, files.shift()));
+  }
+  console.log('✅ Backup saved:', filename);
+}
+
+setInterval(backupData, 60 * 60 * 1000); // every 1 hour
 
 // ================= USERS =================
 function ensureUser(id, username) {
@@ -80,7 +101,7 @@ const ASCII_MAIN = `*╔═════════╗*\n*║ V1LE FARM*\n*╚�
 const ASCII_LB = `*╔════════════╗*\n*║ LEADERBOARD*\n*╚════════════╝*`;
 
 // ================= SESSIONS =================
-const sessions = {};
+const sessions = {}; // { [userId]: { mainMenuId, step, product, grams, cash, msgIds, lockedUntil } }
 
 // ================= LEADERBOARD =================
 function leaderboard(page = 0) {
@@ -105,7 +126,7 @@ async function showMainMenu(id, page = 0, edit = false) {
   const u = users[id];
 
   const orders = u.orders.length
-    ? u.orders.map(o => `${o.status} *${o.product}* — ${o.grams}g — $${o.cash}`).join('\n\n')
+    ? u.orders.map(o => `${o.status} *${o.product}* — ${o.grams}g — $${o.cash}`).slice(-10).join('\n\n')
     : '_No orders yet_';
 
   const lb = leaderboard(page);
@@ -146,64 +167,66 @@ ${lb.text}`;
 // ================= START =================
 bot.onText(/\/start|\/help/, m => showMainMenu(m.chat.id));
 
+// ================= DB IMPORT/EXPORT =================
+bot.onText(/\/exportdb/, m => {
+  if (!ADMIN_IDS.includes(m.chat.id)) return;
+  const latest = fs.readdirSync(BACKUP_DIR).sort().reverse()[0];
+  if (!latest) return bot.sendMessage(m.chat.id, 'No backups found!');
+  bot.sendDocument(m.chat.id, path.join(BACKUP_DIR, latest));
+});
+
+bot.onText(/\/importdb/, m => {
+  if (!ADMIN_IDS.includes(m.chat.id)) return;
+  const latest = fs.readdirSync(BACKUP_DIR).sort().reverse()[0];
+  if (!latest) return bot.sendMessage(m.chat.id, 'No backups found!');
+  const data = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, latest)));
+  users = data.users;
+  meta = data.meta;
+  saveAll();
+  bot.sendMessage(m.chat.id, '✅ Database imported from latest backup!');
+});
+
 // ================= CALLBACKS =================
 bot.on('callback_query', async q => {
   const id = q.message.chat.id;
   ensureUser(id, q.from.username);
   await bot.answerCallbackQuery(q.id).catch(() => {});
   if (!sessions[id]) sessions[id] = {};
-  if (sessions[id].locked) return; // prevent double click
-  sessions[id].locked = true;
-
   const s = sessions[id];
 
+  // Button spam lock 30s
+  if (s.lockedUntil && Date.now() < s.lockedUntil) return;
+  s.lockedUntil = Date.now() + 30_000;
+
   try {
-    // Reload / Prev / Next -> edit main menu
-    if (q.data === 'reload') { await showMainMenu(id, 0, true); sessions[id].locked = false; return; }
-    if (q.data.startsWith('lb_')) { await showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])), true); sessions[id].locked = false; return; }
+    // Reload / Prev / Next
+    if (q.data === 'reload') { await showMainMenu(id, 0, true); return; }
+    if (q.data.startsWith('lb_')) { await showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])), true); return; }
 
     // Admin store
-    if (q.data === 'store_open' && ADMIN_IDS.includes(id)) { meta.storeOpen = true; saveAll(); await showMainMenu(id, 0, true); sessions[id].locked = false; return; }
-    if (q.data === 'store_close' && ADMIN_IDS.includes(id)) { meta.storeOpen = false; saveAll(); await showMainMenu(id, 0, true); sessions[id].locked = false; return; }
+    if (q.data === 'store_open' && ADMIN_IDS.includes(id)) { meta.storeOpen = true; saveAll(); await showMainMenu(id, 0, true); return; }
+    if (q.data === 'store_close' && ADMIN_IDS.includes(id)) { meta.storeOpen = false; saveAll(); await showMainMenu(id, 0, true); return; }
 
     // Product selection
     if (q.data.startsWith('product_')) {
-      if (!meta.storeOpen) { await bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Cannot order.', show_alert: true }); sessions[id].locked = false; return; }
-
+      if (!meta.storeOpen) { await bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Cannot order.', show_alert: true }); return; }
       const u = users[id];
-      if (Date.now() - u.lastOrderAt < 5 * 60000) { await bot.answerCallbackQuery(q.id, { text: 'Please wait before ordering again', show_alert: true }); sessions[id].locked = false; return; }
+      if (Date.now() - u.lastOrderAt < 5 * 60_000) { await bot.answerCallbackQuery(q.id, { text: 'Please wait before ordering again', show_alert: true }); return; }
 
-      // lock product buttons
-      if (s.step === 'amount') { sessions[id].locked = false; return; }
-
-      if (sessions[id]?.mainMenuId) await bot.deleteMessage(id, sessions[id].mainMenuId).catch(() => {});
-
-      sessions[id] = { product: q.data.replace('product_', ''), step: 'amount', msgIds: [], locked: false };
+      // Remove main menu temporarily
+      if (s.mainMenuId) await bot.deleteMessage(id, s.mainMenuId).catch(() => {});
+      sessions[id] = { step: 'amount', product: q.data.replace('product_', ''), msgIds: [], lockedUntil: Date.now() + 30_000 };
       await bot.sendMessage(id, `${ASCII_MAIN}\n✏️ Send grams or $ amount`).then(m => sessions[id].msgIds.push(m.message_id));
-      sessions[id].locked = false;
       return;
     }
 
     // Confirm order
     if (q.data === 'confirm') {
-      if (!s || s.locked) { sessions[id].locked = false; return; }
-      s.locked = true;
-
+      if (!s || !s.product || !s.grams || !s.cash) return bot.sendMessage(id, '❌ Order info missing');
       const u = users[id];
       u.lastOrderAt = Date.now();
 
-      if (!s.product || !s.grams || !s.cash) { await bot.sendMessage(id, '❌ Order info missing'); sessions[id].locked = false; return; }
-
-      const order = {
-        product: s.product,
-        grams: s.grams,
-        cash: s.cash,
-        status: '⏳ Pending',
-        createdAt: Date.now(),
-        pendingXP: Math.floor(2 + s.cash * 0.5),
-        adminMsgs: []
-      };
-
+      const order = { product: s.product, grams: s.grams, cash: s.cash, status: '⏳ Pending', createdAt: Date.now(), pendingXP: Math.floor(2 + s.cash * 0.5), adminMsgs: [] };
       u.orders.push(order);
       u.orders = u.orders.slice(-10);
       saveAll();
@@ -225,7 +248,6 @@ bot.on('callback_query', async q => {
       delete sessions[id];
 
       await showMainMenu(id, 0);
-      sessions[id].locked = false;
       return;
     }
 
@@ -234,7 +256,6 @@ bot.on('callback_query', async q => {
       if (s?.msgIds) s.msgIds.forEach(mid => bot.deleteMessage(id, mid).catch(() => {}));
       delete sessions[id];
       await showMainMenu(id, 0);
-      sessions[id].locked = false;
       return;
     }
 
@@ -243,12 +264,11 @@ bot.on('callback_query', async q => {
       const [, action, uid, index] = q.data.split('_');
       const userId = Number(uid);
       const order = users[userId]?.orders[index];
-      if (!order || order.status !== '⏳ Pending') { sessions[id].locked = false; return; }
+      if (!order || order.status !== '⏳ Pending') return;
 
       order.status = action === 'accept' ? '🟢 Accepted' : '❌ Rejected';
       if (action === 'accept') {
-        giveXP(userId, order.pendingXP);
-        delete order.pendingXP;
+        giveXP(userId, order.pendingXP); delete order.pendingXP;
         bot.sendMessage(userId, '✅ Your order accepted!').then(m => setTimeout(() => bot.deleteMessage(userId, m.message_id).catch(() => {}), 5000));
       } else {
         bot.sendMessage(userId, '❌ Your order rejected').then(m => setTimeout(() => bot.deleteMessage(userId, m.message_id).catch(() => {}), 5000));
@@ -258,10 +278,10 @@ bot.on('callback_query', async q => {
       for (const { admin, msgId } of order.adminMsgs) bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: admin, message_id: msgId }).catch(() => {});
       saveAll();
       await showMainMenu(userId, 0, true);
-      sessions[id].locked = false;
       return;
     }
-  } catch (err) { console.error(err); sessions[id].locked = false; }
+
+  } catch (err) { console.error(err); }
 });
 
 // ================= USER INPUT =================
@@ -271,14 +291,14 @@ bot.on('message', msg => {
   if (!msg.from.is_bot) setTimeout(() => bot.deleteMessage(id, msg.message_id).catch(() => {}), 2000);
 
   const s = sessions[id];
-  if (!s || s.step !== 'amount' || s.locked) return;
-  s.locked = true;
+  if (!s || s.step !== 'amount' || (s.lockedUntil && Date.now() < s.lockedUntil)) return;
+  s.lockedUntil = Date.now() + 30_000; // lock 30s
 
   const price = PRODUCTS[s.product].price;
   let grams, cash;
   if (msg.text.startsWith('$')) { cash = parseFloat(msg.text.slice(1)); grams = +(cash / price).toFixed(1); } 
   else { grams = Math.round(parseFloat(msg.text) * 2) / 2; cash = +(grams * price).toFixed(2); }
-  if (!grams || grams < 2) { s.locked = false; return; }
+  if (!grams || grams < 2) { s.lockedUntil = 0; return; }
 
   s.grams = grams; s.cash = cash;
 
@@ -292,5 +312,5 @@ bot.on('message', msg => {
 ⚖️ ${grams}g
 💲 $${cash}`,
   { reply_markup: { inline_keyboard: [[{ text: '✅ Confirm', callback_data: 'confirm' }], [{ text: '🏠 Back', callback_data: 'back' }]] }, parse_mode: 'Markdown' }
-  ).then(m => { s.msgIds.push(m.message_id); s.locked = false; });
+  ).then(m => s.msgIds.push(m.message_id));
 });
