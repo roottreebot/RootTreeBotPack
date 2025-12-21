@@ -1,4 +1,4 @@
-// === V1LE FARM BOT (FINAL – SINGLE MAIN MENU, TEMP ORDER SUMMARY, BOLD FONTS + BUTTON LOCK) ===
+// === V1LE FARM BOT (FINAL – SINGLE MAIN MENU, TEMP ORDER SUMMARY, BOLD FONTS + FULL BUTTON LOCK) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -162,14 +162,19 @@ bot.on('callback_query', async q => {
     if (q.data === 'reload') { await showMainMenu(id, 0, true); sessions[id].locked = false; return; }
     if (q.data.startsWith('lb_')) { await showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])), true); sessions[id].locked = false; return; }
 
+    // Admin store
     if (q.data === 'store_open' && ADMIN_IDS.includes(id)) { meta.storeOpen = true; saveAll(); await showMainMenu(id, 0, true); sessions[id].locked = false; return; }
     if (q.data === 'store_close' && ADMIN_IDS.includes(id)) { meta.storeOpen = false; saveAll(); await showMainMenu(id, 0, true); sessions[id].locked = false; return; }
 
+    // Product selection
     if (q.data.startsWith('product_')) {
       if (!meta.storeOpen) { await bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Cannot order.', show_alert: true }); sessions[id].locked = false; return; }
 
       const u = users[id];
       if (Date.now() - u.lastOrderAt < 5 * 60000) { await bot.answerCallbackQuery(q.id, { text: 'Please wait before ordering again', show_alert: true }); sessions[id].locked = false; return; }
+
+      // lock product buttons
+      if (s.step === 'amount') { sessions[id].locked = false; return; }
 
       if (sessions[id]?.mainMenuId) await bot.deleteMessage(id, sessions[id].mainMenuId).catch(() => {});
 
@@ -179,6 +184,7 @@ bot.on('callback_query', async q => {
       return;
     }
 
+    // Confirm order
     if (q.data === 'confirm') {
       if (!s || s.locked) { sessions[id].locked = false; return; }
       s.locked = true;
@@ -214,7 +220,7 @@ bot.on('callback_query', async q => {
         order.adminMsgs.push({ admin, msgId: m.message_id });
       }
 
-      // Delete order summary messages
+      // Delete order summary
       if (s.msgIds) s.msgIds.forEach(mid => bot.deleteMessage(id, mid).catch(() => {}));
       delete sessions[id];
 
@@ -223,8 +229,8 @@ bot.on('callback_query', async q => {
       return;
     }
 
+    // Back to menu
     if (q.data === 'back') {
-      // Delete order summary and show main menu
       if (s?.msgIds) s.msgIds.forEach(mid => bot.deleteMessage(id, mid).catch(() => {}));
       delete sessions[id];
       await showMainMenu(id, 0);
@@ -232,6 +238,7 @@ bot.on('callback_query', async q => {
       return;
     }
 
+    // Admin accept/reject
     if (q.data.startsWith('admin_')) {
       const [, action, uid, index] = q.data.split('_');
       const userId = Number(uid);
