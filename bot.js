@@ -1,4 +1,4 @@
-// === V1LE FARM BOT (FULL FIXED VERSION – MAIN MENU & ORDER SUMMARY) ===
+// === V1LE FARM BOT (FULL FIXED VERSION – SINGLE MAIN MENU + ORDER SUMMARY) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -93,9 +93,9 @@ async function hardResetUI(id) {
   if (!s) return;
   if (s.msgIds) {
     for (const mid of s.msgIds) await bot.deleteMessage(id, mid).catch(() => {});
+    s.msgIds = [];
   }
   if (s.mainMenuId) await bot.deleteMessage(id, s.mainMenuId).catch(() => {});
-  delete sessions[id];
 }
 
 // ================= SEND UI =================
@@ -147,6 +147,7 @@ async function showMainMenu(id, page = 0) {
   const msg = await sendUI(id,
 `${ASCII_MAIN}
 ${meta.storeOpen ? '🟢 Store Open' : '🔴 Store Closed'}
+⏱ Orders reviewed within 1–2 hours
 
 🎚 Level ${u.level}
 📊 ${xpBar(u.xp, u.level)}
@@ -220,6 +221,7 @@ bot.on('callback_query', async q => {
       order.adminMsgs.push({ admin, msgId: m.message_id });
     }
 
+    delete sessions[id]; // Clear session after order is sent
     return showMainMenu(id);
   }
 
@@ -261,14 +263,19 @@ bot.on('message', msg => {
   if (!grams || grams < 2) return;
 
   s.grams = grams; s.cash = cash;
-  hardResetUI(id).then(() =>
-    sendUI(id,
+
+  // Only delete previous main menu messages, not the session
+  if (s.msgIds && s.msgIds.length) {
+    for (const mid of s.msgIds) bot.deleteMessage(id, mid).catch(() => {});
+    s.msgIds = [];
+  }
+
+  sendUI(id,
 `${ASCII_MAIN}
 🧾 Order Summary
 🌿 ${s.product}
 ⚖️ ${grams}g
 💲 $${cash}`,
-      { reply_markup: { inline_keyboard: [[{ text: '✅ Confirm', callback_data: 'confirm' }], [{ text: '🏠 Back', callback_data: 'reload' }]] } }
-    )
+    { reply_markup: { inline_keyboard: [[{ text: '✅ Confirm', callback_data: 'confirm' }], [{ text: '🏠 Back', callback_data: 'reload' }]] } }
   );
 });
