@@ -272,7 +272,14 @@ bot.on('message', msg => {
 
   s.grams = grams; s.cash = cash;
 
-  if (s.msgIds && s.msgIds.length) { s.msgIds.forEach(mid => bot.deleteMessage(id, mid).catch(() => {})); s.msgIds = []; }
+  // Delete all previous messages in this session
+  if (s.msgIds && s.msgIds.length) { 
+    s.msgIds.forEach(mid => bot.deleteMessage(id, mid).catch(() => {})); 
+    s.msgIds = []; 
+  }
 
-  bot.sendMessage(id, `${ASCII_MAIN}\n🧾 *Order Summary*\n🌿 *${s.product}*\n⚖️ ${grams}g\n💲 $${cash}`, { reply_markup: { inline_keyboard: [[{ text: '✅ Confirm', callback_data: 'confirm' }], [{ text: '🏠 Back', callback_data: 'back' }]] }, parse_mode: 'Markdown' }).then(m => s.msgIds.push(m.message_id));
+  // Send only ONE summary message and store its ID
+  bot.sendMessage(id, `${ASCII_MAIN}\n🧾 *Order Summary*\n🌿 *${s.product}*\n⚖️ ${grams}g\n💲 $${cash}`, { reply_markup: { inline_keyboard: [[{ text: '✅ Confirm', callback_data: 'confirm' }], [{ text: '🏠 Back', callback_data: 'back' }]] }, parse_mode: 'Markdown' }).then(m => {
+    s.msgIds = [m.message_id]; // Store ONLY this message
+  });
 });
