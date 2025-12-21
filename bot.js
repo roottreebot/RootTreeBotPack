@@ -105,7 +105,7 @@ async function showMainMenu(id, page = 0, edit = false) {
   const lb = leaderboard(page);
   const kb = [
     ...Object.keys(PRODUCTS).map(p => [{ text: `🪴 ${p}`, callback_data: `product_${p}` }]),
-    [{ text: '⬅ Prev', callback_data: `lb_${page - 1}` }, { text: '➡ Next', callback_data: `lb_${page + 1}` }],
+    [{ text: '⬅ Prev', callback_data: `lb_${page - 1}` }, { text: '➡ Next', callback_data: `lb_${page}` }],
     [{ text: '🔄 Reload Menu', callback_data: 'reload' }]
   ];
   if (ADMIN_IDS.includes(id)) kb.push([{ text: meta.storeOpen ? '🔴 Close Store' : '🟢 Open Store', callback_data: meta.storeOpen ? 'store_close' : 'store_open' }]);
@@ -201,7 +201,12 @@ bot.on('callback_query', async q => {
       if (!sessions[id]) sessions[id] = { msgIds: [] };
       s.step = 'amount';
       s.product = q.data.replace('product_', '');
-      
+
+      // Delete existing main menu
+      if (sessions[id].mainMenuId) {
+        await bot.deleteMessage(id, sessions[id].mainMenuId).catch(() => {});
+      }
+
       // Send prompt message and store its message_id
       const promptMsg = await bot.sendMessage(id, `${ASCII_MAIN}\n✏️ Send grams or $ amount`);
       if (!sessions[id]) sessions[id] = {};
@@ -278,6 +283,14 @@ bot.on('message', async msg => {
     // Delete the prompt message
     bot.deleteMessage(id, s.promptMsgId).catch(() => {});
     delete s.promptMsgId;
+  }
+
+  // Check if message is a reply to the main menu (if needed)
+  if (s && s.mainMenuId && msg.reply_to_message && msg.reply_to_message.message_id === s.mainMenuId) {
+    // Optionally handle reply to main menu if needed
+    // For now, just delete the main menu if user replies
+    await bot.deleteMessage(id, s.mainMenuId).catch(() => {});
+    delete s.mainMenuId;
   }
 
   if (!s || s.step !== 'amount') return;
