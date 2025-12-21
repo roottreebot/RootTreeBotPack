@@ -1,4 +1,4 @@
-// === V1LE FARM BOT (FULL FIXED VERSION – SINGLE MAIN MENU + ORDER SUMMARY) ===
+// === V1LE FARM BOT (FULL FINAL VERSION – SINGLE MAIN MENU + TEMP ORDER SUMMARY) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -87,25 +87,6 @@ const ASCII_LB = `╔════════════╗
 // ================= SESSIONS =================
 const sessions = {};
 
-// ================= HARD UI RESET =================
-async function hardResetUI(id) {
-  const s = sessions[id];
-  if (!s) return;
-  if (s.msgIds) {
-    for (const mid of s.msgIds) await bot.deleteMessage(id, mid).catch(() => {});
-    s.msgIds = [];
-  }
-  if (s.mainMenuId) await bot.deleteMessage(id, s.mainMenuId).catch(() => {});
-}
-
-// ================= SEND UI =================
-async function sendUI(id, text, opt = {}) {
-  if (!sessions[id]) sessions[id] = { msgIds: [] };
-  const m = await bot.sendMessage(id, text, opt);
-  sessions[id].msgIds.push(m.message_id);
-  return m;
-}
-
 // ================= LEADERBOARD =================
 function leaderboard(page = 0) {
   const list = Object.entries(users)
@@ -126,7 +107,6 @@ function leaderboard(page = 0) {
 // ================= MAIN MENU =================
 async function showMainMenu(id, page = 0) {
   ensureUser(id);
-  await hardResetUI(id);
   const u = users[id];
 
   const orders = u.orders.length
@@ -144,7 +124,7 @@ async function showMainMenu(id, page = 0) {
     kb.push([{ text: meta.storeOpen ? '🔴 Close Store' : '🟢 Open Store', callback_data: meta.storeOpen ? 'store_close' : 'store_open' }]);
   }
 
-  const msg = await sendUI(id,
+  const menuText =
 `${ASCII_MAIN}
 ${meta.storeOpen ? '🟢 Store Open' : '🔴 Store Closed'}
 ⏱ Orders reviewed within 1–2 hours
@@ -155,10 +135,23 @@ ${meta.storeOpen ? '🟢 Store Open' : '🔴 Store Closed'}
 📦 Orders (last 10)
 ${orders}
 
-${lb.text}`,
-    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
-  );
+${lb.text}`;
 
+  // Edit main menu if exists
+  if (sessions[id]?.mainMenuId) {
+    try {
+      await bot.editMessageText(menuText, {
+        chat_id: id,
+        message_id: sessions[id].mainMenuId,
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: kb }
+      });
+      return;
+    } catch {}
+  }
+
+  // Send new main menu
+  const msg = await bot.sendMessage(id, menuText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } });
   if (!sessions[id]) sessions[id] = {};
   sessions[id].mainMenuId = msg.message_id;
 }
@@ -180,8 +173,8 @@ bot.on('callback_query', async q => {
 
   if (q.data.startsWith('product_')) {
     if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store closed', show_alert: true });
-    sessions[id] = { msgIds: [], product: q.data.replace('product_', ''), step: 'amount', locked: false };
-    return sendUI(id, `${ASCII_MAIN}\n✏️ Send grams or $ amount`);
+    sessions[id] = { product: q.data.replace('product_', ''), step: 'amount', msgIds: [], locked: false };
+    return bot.sendMessage(id, `${ASCII_MAIN}\n✏️ Send grams or $ amount`).then(m => sessions[id].msgIds.push(m.message_id));
   }
 
   if (q.data === 'confirm') {
@@ -211,34 +204,41 @@ bot.on('callback_query', async q => {
       const m = await bot.sendMessage(
         admin,
         `🧾 NEW ORDER\n@${u.username || id}\n${order.product} — ${order.grams}g — $${order.cash}`,
-        {
-          reply_markup: { inline_keyboard: [[
-            { text: '✅ Accept', callback_data: `admin_accept_${id}_${u.orders.length - 1}` },
-            { text: '❌ Reject', callback_data: `admin_reject_${id}_${u.orders.length - 1}` }
-          ]] }
-        }
+        { reply_markup: { inline_keyboard: [[
+          { text: '✅ Accept', callback_data: `admin_accept_${id}_${u.orders.length - 1}` },
+          { text: '❌ Reject', callback_data: `admin_reject_${id}_${u.orders.length - 1}` }
+        ]] } }
       );
       order.adminMsgs.push({ admin, msgId: m.message_id });
     }
 
-    delete sessions[id]; // Clear session after order is sent
+    // Delete order summary messages
+    if (s.msgIds) s.msgIds.forEach(mid => bot.deleteMessage(id, mid).catch(() => {}));
+    delete sessions[id].product;
+    delete sessions[id].grams;
+    delete sessions[id].cash;
+    delete sessions[id].step;
+    delete sessions[id].locked;
+    delete sessions[id].msgIds;
+
+    // Refresh main menu
     return showMainMenu(id);
   }
 
   if (q.data.startsWith('admin_')) {
-    const [, action, uid, index] = q.data.split('_'); 
+    const [, action, uid, index] = q.data.split('_');
     const userId = Number(uid);
     const order = users[userId]?.orders[index];
     if (!order || order.status !== '⏳ Pending') return;
 
     order.status = action === 'accept' ? '🟢 Accepted' : '❌ Rejected';
-    if (action === 'accept') { 
-      giveXP(userId, order.pendingXP); 
+    if (action === 'accept') {
+      giveXP(userId, order.pendingXP);
       delete order.pendingXP;
-      bot.sendMessage(userId, '✅ Your order accepted!').then(m => setTimeout(() => bot.deleteMessage(userId, m.message_id).catch(() => {}), 5000)); 
-    } else { 
-      bot.sendMessage(userId, '❌ Your order rejected').then(m => setTimeout(() => bot.deleteMessage(userId, m.message_id).catch(() => {}), 5000)); 
-      users[userId].orders = users[userId].orders.filter(o => o !== order); 
+      bot.sendMessage(userId, '✅ Your order accepted!').then(m => setTimeout(() => bot.deleteMessage(userId, m.message_id).catch(() => {}), 5000));
+    } else {
+      bot.sendMessage(userId, '❌ Your order rejected').then(m => setTimeout(() => bot.deleteMessage(userId, m.message_id).catch(() => {}), 5000));
+      users[userId].orders = users[userId].orders.filter(o => o !== order);
     }
 
     for (const { admin, msgId } of order.adminMsgs) bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: admin, message_id: msgId }).catch(() => {});
@@ -264,18 +264,18 @@ bot.on('message', msg => {
 
   s.grams = grams; s.cash = cash;
 
-  // Only delete previous main menu messages, not the session
+  // Delete old summary messages
   if (s.msgIds && s.msgIds.length) {
-    for (const mid of s.msgIds) bot.deleteMessage(id, mid).catch(() => {});
+    s.msgIds.forEach(mid => bot.deleteMessage(id, mid).catch(() => {}));
     s.msgIds = [];
   }
 
-  sendUI(id,
+  bot.sendMessage(id,
 `${ASCII_MAIN}
 🧾 Order Summary
 🌿 ${s.product}
 ⚖️ ${grams}g
 💲 $${cash}`,
-    { reply_markup: { inline_keyboard: [[{ text: '✅ Confirm', callback_data: 'confirm' }], [{ text: '🏠 Back', callback_data: 'reload' }]] } }
-  );
+  { reply_markup: { inline_keyboard: [[{ text: '✅ Confirm', callback_data: 'confirm' }], [{ text: '🏠 Back', callback_data: 'reload' }]] } }
+  ).then(m => s.msgIds.push(m.message_id));
 });
