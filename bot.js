@@ -1,4 +1,4 @@
-// === V1LE FARM BOT (FULL: SINGLE MAIN MENU + ORDER SUMMARY + BUTTON LOCK + BACKUPS) ===
+// === V1LE FARM BOT (FULL: SINGLE MAIN MENU + ORDER SUMMARY + BACKUPS) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
@@ -162,22 +162,43 @@ bot.on('callback_query', async q => {
   if (!sessions[id]) sessions[id] = {};
   const s = sessions[id];
 
-  // Removed overall 30s cooldown here
-
   try {
-    if (q.data === 'reload') { await showMainMenu(id, 0, true); return; }
-    if (q.data.startsWith('lb_')) { await showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])), true); return; }
+    if (q.data === 'reload') {
+      await showMainMenu(id, 0, true);
+      return;
+    }
+    
+    if (q.data.startsWith('lb_')) {
+      await showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])), true);
+      return;
+    }
 
-    if (q.data === 'store_open' && ADMIN_IDS.includes(id)) { meta.storeOpen = true; saveAll(); await showMainMenu(id, 0, true); return; }
-    if (q.data === 'store_close' && ADMIN_IDS.includes(id)) { meta.storeOpen = false; saveAll(); await showMainMenu(id, 0, true); return; }
+    if (q.data === 'store_open' && ADMIN_IDS.includes(id)) {
+      meta.storeOpen = true;
+      saveAll();
+      await showMainMenu(id, 0, true);
+      return;
+    }
+    
+    if (q.data === 'store_close' && ADMIN_IDS.includes(id)) {
+      meta.storeOpen = false;
+      saveAll();
+      await showMainMenu(id, 0, true);
+      return;
+    }
 
     if (q.data.startsWith('product_')) {
-      if (!meta.storeOpen) { await bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed!', show_alert: true }); return; }
+      if (!meta.storeOpen) {
+        await bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed!', show_alert: true });
+        return;
+      }
       const u = users[id];
-      if (Date.now() - u.lastOrderAt < 5 * 60_000) { await bot.answerCallbackQuery(q.id, { text: 'Please wait before ordering again', show_alert: true }); return; }
+      if (Date.now() - u.lastOrderAt < 5 * 60_000) {
+        await bot.answerCallbackQuery(q.id, { text: 'Please wait before ordering again', show_alert: true });
+        return;
+      }
 
-      // Merge session
-      if (!sessions[id]) sessions[id] = { msgIds: [], lockedUntil: 0 };
+      if (!sessions[id]) sessions[id] = { msgIds: [] };
       s.step = 'amount';
       s.product = q.data.replace('product_', '');
       if (s.mainMenuId) await bot.deleteMessage(id, s.mainMenuId).catch(() => {}); delete s.mainMenuId;
@@ -242,13 +263,12 @@ bot.on('message', msg => {
 
   const s = sessions[id];
   if (!s || s.step !== 'amount') return;
-  // Removed cooldown here as well
 
   const price = PRODUCTS[s.product].price;
   let grams, cash;
   if (msg.text.startsWith('$')) { cash = parseFloat(msg.text.slice(1)); grams = +(cash / price).toFixed(1); } 
   else { grams = Math.round(parseFloat(msg.text) * 2) / 2; cash = +(grams * price).toFixed(2); }
-  if (!grams || grams < 2) { s.lockedUntil = 0; return; }
+  if (!grams || grams < 2) { return; }
 
   s.grams = grams; s.cash = cash;
 
