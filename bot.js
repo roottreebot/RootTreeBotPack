@@ -289,6 +289,71 @@ Status: ${order.status}`;
     saveAll();
     return showMainMenu(userId);
   }
+
+  if (q.data === 'cash_refresh' && ADMIN_IDS.includes(id)) {
+  await bot.answerCallbackQuery(q.id);
+
+  return bot.editMessageText(
+    `💰 *Total Money Made*
+
+💵 $${meta.totalCash.toFixed(2)}
+
+⚠️ This counts only *accepted* orders.`,
+    {
+      chat_id: id,
+      message_id: q.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🔄 Refresh', callback_data: 'cash_refresh' }],
+          [{ text: '🗑 Reset Cash', callback_data: 'cash_reset_confirm' }]
+        ]
+      }
+    }
+  );
+}
+
+if (q.data === 'cash_reset_confirm' && ADMIN_IDS.includes(id)) {
+  await bot.answerCallbackQuery(q.id);
+
+  return bot.editMessageText(
+    '⚠️ *Are you sure you want to reset total cash?*',
+    {
+      chat_id: id,
+      message_id: q.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '✅ YES, Reset', callback_data: 'cash_reset_yes' },
+            { text: '❌ Cancel', callback_data: 'cash_refresh' }
+          ]
+        ]
+      }
+    }
+  );
+}
+
+if (q.data === 'cash_reset_yes' && ADMIN_IDS.includes(id)) {
+  meta.totalCash = 0;
+  saveAll();
+  await bot.answerCallbackQuery(q.id, { text: 'Cash reset!' });
+
+  return bot.editMessageText(
+    '💰 *Total Money Made*\n\n💵 $0.00',
+    {
+      chat_id: id,
+      message_id: q.message.message_id,
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '🔄 Refresh', callback_data: 'cash_refresh' }]
+        ]
+      }
+    }
+  );
+}
+
 });
 
 // ================= USER INPUT =================
@@ -514,71 +579,6 @@ bot.onText(/\/cash/, async (msg) => {
     }
   });
 });
-
-// ===== CASH INLINE BUTTONS =====
-if (q.data === 'cash_refresh' && ADMIN_IDS.includes(id)) {
-  await bot.answerCallbackQuery(q.id);
-
-  return bot.editMessageText(
-    `💰 *Total Money Made*
-
-💵 $${meta.totalCash.toFixed(2)}
-
-⚠️ This counts only *accepted* orders.`,
-    {
-      chat_id: id,
-      message_id: q.message.message_id,
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🔄 Refresh', callback_data: 'cash_refresh' }],
-          [{ text: '🗑 Reset Cash', callback_data: 'cash_reset_confirm' }]
-        ]
-      }
-    }
-  );
-}
-
-if (q.data === 'cash_reset_confirm' && ADMIN_IDS.includes(id)) {
-  await bot.answerCallbackQuery(q.id);
-
-  return bot.editMessageText(
-    '⚠️ *Are you sure you want to reset total cash?*',
-    {
-      chat_id: id,
-      message_id: q.message.message_id,
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '✅ YES, Reset', callback_data: 'cash_reset_yes' },
-            { text: '❌ Cancel', callback_data: 'cash_refresh' }
-          ]
-        ]
-      }
-    }
-  );
-}
-
-if (q.data === 'cash_reset_yes' && ADMIN_IDS.includes(id)) {
-  meta.totalCash = 0;
-  saveAll();
-  await bot.answerCallbackQuery(q.id, { text: 'Cash reset!' });
-
-  return bot.editMessageText(
-    '💰 *Total Money Made*\n\n💵 $0.00',
-    {
-      chat_id: id,
-      message_id: q.message.message_id,
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '🔄 Refresh', callback_data: 'cash_refresh' }]
-        ]
-      }
-    }
-  );
-}
 
 // ================= /userstats COMMAND WITH INLINE REFRESH =================
 bot.onText(/\/userstats\s+@?(\w+)/, async (msg, match) => {
