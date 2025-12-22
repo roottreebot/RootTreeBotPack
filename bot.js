@@ -360,6 +360,43 @@ bot.onText(/\/unban (.+)/, (msg, match) => {
   bot.sendMessage(id, `✅ Unbanned [${users[uid].username||uid}](tg://user?id=${uid})`, {parse_mode:'Markdown'});
 });
 
+// ================= BROADCAST =================
+bot.onText(/\/broadcast (.+)/, async (msg, match) => {
+  const adminId = msg.chat.id;
+  if (!ADMIN_IDS.includes(adminId)) return;
+
+  const text = match[1];
+  if (!text || text.length < 1) {
+    return bot.sendMessage(adminId, '❌ Usage: /broadcast your message here');
+  }
+
+  let success = 0;
+  let failed = 0;
+
+  await bot.sendMessage(adminId, `📣 Broadcasting to ${Object.keys(users).length} users...`);
+
+  for (const uid of Object.keys(users)) {
+    const user = users[uid];
+    if (!user || user.banned) continue;
+
+    try {
+      await bot.sendMessage(uid, text, { parse_mode: 'Markdown' });
+      success++;
+    } catch (err) {
+      failed++;
+    }
+
+    // small delay to avoid Telegram flood limits
+    await new Promise(r => setTimeout(r, 35));
+  }
+
+  bot.sendMessage(
+    adminId,
+    `✅ *Broadcast finished*\n\n📬 Sent: *${success}*\n❌ Failed: *${failed}*`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
 // ================= EXPORT/IMPORT DB =================
 bot.onText(/\/exportdb/, msg => {
   const id = msg.chat.id;
