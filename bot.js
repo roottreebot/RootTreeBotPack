@@ -1,4 +1,4 @@
-// === V1LE FARM BOT — FINAL STABLE (IMPORT FIX + AUTO DELETE USER MSGS) ===
+// === V1LE FARM BOT — FINAL FULL STABLE BUILD ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 const path = require('path');
@@ -40,7 +40,7 @@ setInterval(() => {
   fs.writeFileSync(file, JSON.stringify({ users, meta }, null, 2));
   const files = fs.readdirSync(BACKUP_DIR).sort();
   while (files.length > 24) fs.unlinkSync(path.join(BACKUP_DIR, files.shift()));
-}, 60 * 60 * 1000);
+}, 3600000);
 
 /* ================= DATA ================= */
 const PRODUCTS = {
@@ -60,7 +60,6 @@ function ensureUser(id, username) {
       level: 1,
       orders: [],
       banned: false,
-      lastOrderAt: 0,
       username: username || ''
     };
   }
@@ -117,6 +116,7 @@ function leaderboard(page = 0) {
   return text;
 }
 
+/* ================= MAIN MENU ================= */
 async function showMenu(id, page = 0, edit = false) {
   ensureUser(id);
   const u = users[id];
@@ -162,48 +162,8 @@ ${leaderboard(page)}`;
   sessions[id].lbPage = page;
 }
 
-/* ================= COMMANDS ================= */
+/* ================= START ================= */
 bot.onText(/\/start|\/help/, m => showMenu(m.chat.id));
-
-bot.onText(/\/exportdb/, m => {
-  if (!ADMIN_IDS.includes(m.chat.id)) return;
-  const files = fs.readdirSync(BACKUP_DIR).sort().reverse();
-  if (!files.length) return bot.sendMessage(m.chat.id, '❌ No backups found');
-  bot.sendDocument(m.chat.id, path.join(BACKUP_DIR, files[0]));
-});
-
-bot.onText(/\/importdb/, m => {
-  if (!ADMIN_IDS.includes(m.chat.id)) return;
-
-  const files = fs.readdirSync(BACKUP_DIR).sort().reverse();
-  if (!files.length) {
-    sessions[m.chat.id] = { awaitingDB: true };
-    return bot.sendMessage(m.chat.id, '📥 Send the JSON backup file now');
-  }
-
-  const data = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, files[0])));
-  users = data.users;
-  meta = data.meta;
-  saveAll();
-  bot.sendMessage(m.chat.id, '✅ Database imported from latest backup');
-});
-
-bot.on('document', async msg => {
-  const id = msg.chat.id;
-  if (!ADMIN_IDS.includes(id)) return;
-  if (!sessions[id]?.awaitingDB) return;
-
-  const file = await bot.getFile(msg.document.file_id);
-  const filePath = await bot.downloadFile(file.file_path, './');
-
-  const data = JSON.parse(fs.readFileSync(filePath));
-  users = data.users;
-  meta = data.meta;
-  saveAll();
-
-  delete sessions[id].awaitingDB;
-  bot.sendMessage(id, '✅ Database imported successfully');
-});
 
 /* ================= CALLBACKS ================= */
 bot.on('callback_query', async q => {
@@ -221,11 +181,11 @@ bot.on('callback_query', async q => {
   if (q.data === 'store_open' && ADMIN_IDS.includes(id)) {
     meta.storeOpen = true; saveAll(); return showMenu(id, s.lbPage || 0, true);
   }
-
   if (q.data === 'store_close' && ADMIN_IDS.includes(id)) {
     meta.storeOpen = false; saveAll(); return showMenu(id, s.lbPage || 0, true);
   }
 
+  /* === PRODUCT SELECT === */
   if (q.data.startsWith('product_')) {
     if (!meta.storeOpen)
       return bot.answerCallbackQuery(q.id, { text: 'Store is closed', show_alert: true });
@@ -233,26 +193,82 @@ bot.on('callback_query', async q => {
     if (s.menuId) await bot.deleteMessage(id, s.menuId).catch(() => {});
     sessions[id] = { step: 'amount', product: q.data.replace('product_', '') };
 
-    return bot.sendMessage(id, `${ASCII}\n✏️ *Send grams or $ amount*`, { parse_mode: 'Markdown' });
+    const m = await bot.sendMessage(id, `${ASCII}\n✏️ *Send grams or $ amount*`, { parse_mode: 'Markdown' });
+    sessions[id].promptMsg = m.message_id;
+    return;
   }
 
+  /* === CONFIRM ORDER === */
   if (q.data === 'confirm') {
     if (!s.product || !s.grams) return;
-    users[id].orders.push({
+
+    // cleanup order UI
+    if (s.summaryMsg) await bot.deleteMessage(id, s.summaryMsg).catch(() => {});
+    if (s.promptMsg) await bot.deleteMessage(id, s.promptMsg).catch(() => {});
+
+    const order = {
       product: s.product,
       grams: s.grams,
       cash: s.cash,
       status: '⏳ Pending',
-      createdAt: Date.now()
-    });
+      createdAt: Date.now(),
+      pendingXP: Math.floor(2 + s.cash * 0.5),
+      adminMsgs: []
+    };
+
+    users[id].orders.push(order);
     saveAll();
+
+    // SEND TO ADMINS (FIXED)
+    for (const admin of ADMIN_IDS) {
+      const m = await bot.sendMessage(
+        admin,
+`🧾 *NEW ORDER*
+User: @${users[id].username || id}
+Product: ${order.product}
+Amount: ${order.grams}g
+Price: $${order.cash}`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
+              { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
+            ]]
+          }
+        }
+      );
+      order.adminMsgs.push({ admin, msgId: m.message_id });
+    }
+
     delete sessions[id];
     return showMenu(id);
   }
 
+  /* === BACK === */
   if (q.data === 'back') {
+    if (s.summaryMsg) await bot.deleteMessage(id, s.summaryMsg).catch(() => {});
+    if (s.promptMsg) await bot.deleteMessage(id, s.promptMsg).catch(() => {});
     delete sessions[id];
     return showMenu(id);
+  }
+
+  /* === ADMIN ACCEPT / REJECT === */
+  if (q.data.startsWith('admin_')) {
+    const [, action, uid, idx] = q.data.split('_');
+    const order = users[uid]?.orders[idx];
+    if (!order || order.status !== '⏳ Pending') return;
+
+    order.status = action === 'accept' ? '🟢 Accepted' : '❌ Rejected';
+
+    if (action === 'accept') giveXP(uid, order.pendingXP);
+
+    for (const { admin, msgId } of order.adminMsgs) {
+      bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: admin, message_id: msgId }).catch(() => {});
+    }
+
+    saveAll();
+    return showMenu(Number(uid));
   }
 });
 
@@ -260,7 +276,6 @@ bot.on('callback_query', async q => {
 bot.on('message', msg => {
   const id = msg.chat.id;
 
-  // Delete ALL user messages after seen (non-admin)
   if (!ADMIN_IDS.includes(id) && !msg.from.is_bot) {
     setTimeout(() => bot.deleteMessage(id, msg.message_id).catch(() => {}), 2000);
   }
@@ -300,5 +315,5 @@ bot.on('message', msg => {
         ]
       }
     }
-  );
+  ).then(m => s.summaryMsg = m.message_id);
 });
