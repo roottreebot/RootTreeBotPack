@@ -360,6 +360,29 @@ bot.onText(/\/unban (.+)/, (msg, match) => {
   bot.sendMessage(id, `✅ Unbanned [${users[uid].username||uid}](tg://user?id=${uid})`, {parse_mode:'Markdown'});
 });
 
+// ================= TRACK LAST ACTIVITY =================
+bot.on('message', msg => {
+  const id = msg.chat.id;
+  ensureUser(id, msg.from.username);
+  users[id].lastActive = Date.now(); // Track last activity timestamp
+  saveAll(); // Save to persist activity
+});
+
+// ================= /activeusers COMMAND =================
+bot.onText(/\/activeusers/, (msg) => {
+  const chatId = msg.chat.id;
+  if (!ADMIN_IDS.includes(chatId)) return; // Only admins
+
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  const activeUsers = Object.values(users).filter(u => u.lastActive && now - u.lastActive <= ONE_WEEK_MS);
+
+  bot.sendMessage(chatId, `📊 Active Users in last 7 days: *${activeUsers.length}*`, {
+    parse_mode: 'Markdown'
+  });
+});
+
 // ================= /resetweekly COMMAND WITH CONFIRMATION =================
 bot.onText(/\/resetweekly/, async (msg) => {
   const chatId = msg.chat.id;
