@@ -1,4 +1,4 @@
-// === V1LE FARM BOT (FINAL – MOBILE FRIENDLY, FULL FEATURES, 2 PENDING ORDERS + INTERACTIVE /stats) ===
+// === V1LE FARM BOT (FINAL – MOBILE FRIENDLY, FULL FEATURES, 2 PENDING ORDERS + WORKING /STATS) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -22,6 +22,10 @@ let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
 let meta = fs.existsSync(META_FILE)
   ? JSON.parse(fs.readFileSync(META_FILE))
   : { weeklyReset: Date.now(), storeOpen: true, totalMoney: 0, totalOrders: 0 };
+
+// Ensure meta numbers exist
+if (typeof meta.totalMoney !== 'number') meta.totalMoney = 0;
+if (typeof meta.totalOrders !== 'number') meta.totalOrders = 0;
 
 function saveAll() {
   fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
@@ -100,7 +104,6 @@ function getLeaderboard(page = 0) {
     .filter(([, u]) => !u.banned)
     .sort((a, b) => b[1].weeklyXp - a[1].weeklyXp);
 
-  const totalPages = Math.ceil(list.length / lbSize) || 1;
   const slice = list.slice(page * lbSize, page * lbSize + lbSize);
 
   let text = `*📊 Weekly Leaderboard*\n\n`;
@@ -194,12 +197,8 @@ bot.on('callback_query', async q => {
   if (q.data === 'reload') return showMainMenu(id);
   if (q.data.startsWith('lb_')) return showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])));
 
-  if (q.data === 'store_open' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = true; saveAll(); return showMainMenu(id);
-  }
-  if (q.data === 'store_close' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = false; saveAll(); return showMainMenu(id);
-  }
+  if (q.data === 'store_open' && ADMIN_IDS.includes(id)) { meta.storeOpen = true; saveAll(); return showMainMenu(id); }
+  if (q.data === 'store_close' && ADMIN_IDS.includes(id)) { meta.storeOpen = false; saveAll(); return showMainMenu(id); }
 
   if (q.data.startsWith('product_')) {
     if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Orders disabled.', show_alert: true });
@@ -271,7 +270,7 @@ Status: ⚪ Pending`,
       bot.sendMessage(userId, '✅ Your order has been accepted!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
 
       // Add to total money and orders
-      meta.totalMoney += order.cash;
+      meta.totalMoney += Number(order.cash || 0);
       meta.totalOrders++;
       saveAll();
     } else {
@@ -279,6 +278,7 @@ Status: ⚪ Pending`,
       users[userId].orders = users[userId].orders.filter(o => o !== order);
     }
 
+    // Edit order message for all admins
     const adminText = `🧾 *ORDER UPDATED*
 User: @${users[userId].username || userId}
 Product: ${order.product}
@@ -295,20 +295,9 @@ Status: ${order.status}`;
   }
 
   // ================= STATS INLINE BUTTONS =================
-  if (q.data === 'reset_money') {
-    meta.totalMoney = 0; saveAll();
-    return bot.answerCallbackQuery(q.id, { text: '✅ Total money reset!' });
-  }
-  if (q.data === 'reset_orders') {
-    meta.totalOrders = 0; saveAll();
-    return bot.answerCallbackQuery(q.id, { text: '✅ Total orders reset!' });
-  }
-  if (q.data === 'reset_both') {
-    meta.totalMoney = 0;
-    meta.totalOrders = 0;
-    saveAll();
-    return bot.answerCallbackQuery(q.id, { text: '✅ Money and orders reset!' });
-  }
+  if (q.data === 'reset_money') { meta.totalMoney = 0; saveAll(); return bot.answerCallbackQuery(q.id, { text: '✅ Total money reset!' }); }
+  if (q.data === 'reset_orders') { meta.totalOrders = 0; saveAll(); return bot.answerCallbackQuery(q.id, { text: '✅ Total orders reset!' }); }
+  if (q.data === 'reset_both') { meta.totalMoney = 0; meta.totalOrders = 0; saveAll(); return bot.answerCallbackQuery(q.id, { text: '✅ Money and orders reset!' }); }
 });
 
 // ================= USER INPUT =================
@@ -416,12 +405,15 @@ bot.onText(/\/importdb/, msg => {
 // ================= STATS COMMAND =================
 bot.onText(/\/stats/, msg => {
   const id = msg.chat.id;
-  if (!ADMIN_IDS.includes(id)) return;
 
-  const statsText = `💰 Total Money Earned: $${meta.totalMoney}
-📦 Total Orders: ${meta.totalOrders}`;
+  const totalMoney = Number(meta.totalMoney || 0).toFixed(2);
+  const totalOrders = Number(meta.totalOrders || 0);
 
-  const buttons = [
+  const statsText = `💰 Total Money Earned: $${totalMoney}
+📦 Total Orders: ${totalOrders}`;
+
+  // Only show reset buttons to admins
+  const buttons = ADMIN_IDS.includes(id) ? [
     [
       { text: 'Reset Money', callback_data: 'reset_money' },
       { text: 'Reset Orders', callback_data: 'reset_orders' }
@@ -429,7 +421,7 @@ bot.onText(/\/stats/, msg => {
     [
       { text: 'Reset Both', callback_data: 'reset_both' }
     ]
-  ];
+  ] : [];
 
-  bot.sendMessage(id, statsText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
+  bot.sendMessage(id, statsText, { parse_mode: 'Markdown', reply_markup: buttons.length ? { inline_keyboard: buttons } : undefined });
 });
