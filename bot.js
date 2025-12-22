@@ -71,9 +71,7 @@ const PRODUCTS = {
 };
 
 // ================= ASCII =================
-const ASCII_MAIN = `╔═════════╗
-║ V1LE FARM
-╚═════════╝`;
+const ASCII_MAIN = `V1LE FARM`;
 
 // ================= SESSIONS =================
 const sessions = {};
@@ -111,7 +109,7 @@ function getLeaderboard(page = 0) {
   const totalPages = Math.ceil(list.length / lbSize) || 1;
   const slice = list.slice(page * lbSize, page * lbSize + lbSize);
 
-  let text = `╔════════════╗\n║ WEEKLY LEADERBOARD\n╚════════════╝\n\n`;
+  let text = `\nWEEKLY LEADERBOARD\n\n\n`;
   slice.forEach(([id, u], i) => {
     text += `#${page * lbSize + i + 1} — @${u.username || id} — Lv ${u.level} — XP ${u.weeklyXp}\n`;
   });
