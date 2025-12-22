@@ -1,4 +1,4 @@
-// === V1LE FARM BOT (FINAL – MOBILE FRIENDLY, FULL FEATURES, 2 PENDING ORDERS) ===
+// === V1LE FARM BOT (FINAL – MOBILE FRIENDLY, FULL FEATURES, 2 PENDING ORDERS + /stats LAST 5 ORDERS) ===
 const TelegramBot = require('node-telegram-bot-api');
 const fs = require('fs');
 
@@ -21,7 +21,7 @@ const META_FILE = 'meta.json';
 let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
 let meta = fs.existsSync(META_FILE)
   ? JSON.parse(fs.readFileSync(META_FILE))
-  : { weeklyReset: Date.now(), storeOpen: true };
+  : { weeklyReset: Date.now(), storeOpen: true, totalMoney: 0, totalOrders: 0, lastOrders: [] };
 
 function saveAll() {
   fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
@@ -206,7 +206,6 @@ bot.on('callback_query', async q => {
     if (Date.now() - (s.lastClick || 0) < 30000) return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
     s.lastClick = Date.now();
 
-    // ✅ MAX 2 PENDING ORDERS
     const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
     if (pendingCount >= 2) return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
 
@@ -270,6 +269,19 @@ Status: ⚪ Pending`,
       giveXP(userId, order.pendingXP);
       delete order.pendingXP;
       bot.sendMessage(userId, '✅ Your order has been accepted!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
+
+      // Add to total money and orders
+      meta.totalMoney += order.cash;
+      meta.totalOrders++;
+      meta.lastOrders.push({
+        user: users[userId].username || userId,
+        product: order.product,
+        grams: order.grams,
+        cash: order.cash,
+        status: order.status
+      });
+      if (meta.lastOrders.length > 5) meta.lastOrders = meta.lastOrders.slice(-5);
+      saveAll();
     } else {
       bot.sendMessage(userId, '❌ Your order has been rejected!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
       users[userId].orders = users[userId].orders.filter(o => o !== order);
@@ -288,6 +300,28 @@ Status: ${order.status}`;
 
     saveAll();
     return showMainMenu(userId);
+  }
+
+  // ================= STATS INLINE BUTTONS =================
+  if (q.data === 'reset_money') {
+    meta.totalMoney = 0; saveAll();
+    return bot.answerCallbackQuery(q.id, { text: '✅ Total money reset!' });
+  }
+  if (q.data === 'reset_orders') {
+    meta.totalOrders = 0; saveAll();
+    return bot.answerCallbackQuery(q.id, { text: '✅ Total orders reset!' });
+  }
+  if (q.data === 'reset_both') {
+    meta.totalMoney = 0;
+    meta.totalOrders = 0;
+    saveAll();
+    return bot.answerCallbackQuery(q.id, { text: '✅ Money and orders reset!' });
+  }
+  if (q.data === 'show_last_orders') {
+    const lastText = meta.lastOrders.length
+      ? meta.lastOrders.map((o,i)=>`#${i+1} — *@${o.user}* — ${o.product} — ${o.grams}g — $${o.cash} — *${o.status}*`).join('\n')
+      : '_No recent orders_';
+    return bot.sendMessage(id, `📜 *Last 5 Orders*\n${lastText}`, { parse_mode:'Markdown' });
   }
 });
 
@@ -391,4 +425,26 @@ bot.onText(/\/importdb/, msg => {
     };
     bot.on('message',listener);
   });
+});
+
+// ================= STATS COMMAND =================
+bot.onText(/\/stats/, msg => {
+  const id = msg.chat.id;
+  if (!ADMIN_IDS.includes(id)) return;
+
+  const statsText = `💰 Total Money Earned: $${meta.totalMoney}
+📦 Total Orders: ${meta.totalOrders}`;
+
+  const buttons = [
+    [
+      { text: 'Reset Money', callback_data: 'reset_money' },
+      { text: 'Reset Orders', callback_data: 'reset_orders' }
+    ],
+    [
+      { text: 'Reset Both', callback_data: 'reset_both' },
+      { text: 'Last 5 Orders', callback_data: 'show_last_orders' }
+    ]
+  ];
+
+  bot.sendMessage(id, statsText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
 });
