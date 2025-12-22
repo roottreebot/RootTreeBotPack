@@ -78,8 +78,7 @@ setInterval(() => {
 
 // ================= START =================
 bot.onText(/\/start|\/help/, msg => {
-  ensureUser(msg.chat.id, msg.from.username);
-  bot.sendMessage(msg.chat.id, '✅ Bot is running.');
+  showMainMenu(msg.chat.id, 0);
 });
 
 // ================= STATS (ADMIN ONLY) =================
