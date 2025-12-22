@@ -470,6 +470,150 @@ ${comparison}`;
   }
 });
 
+// ================= FULL FEATURE BLACKJACK =================
+const suitsEmoji = ['♠️', '♥️', '♦️', '♣️'];
+const valuesEmoji = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+
+function drawCardEmoji() {
+  const suit = suitsEmoji[Math.floor(Math.random()*suitsEmoji.length)];
+  const value = valuesEmoji[Math.floor(Math.random()*valuesEmoji.length)];
+  return { suit, value };
+}
+
+function cardValue(card) {
+  if (['J','Q','K'].includes(card.value)) return 10;
+  if (card.value==='A') return 11;
+  return parseInt(card.value);
+}
+
+function handTotal(hand) {
+  let total = 0, aces = 0;
+  for (const c of hand) {
+    total += cardValue(c);
+    if (c.value==='A') aces++;
+  }
+  while(total>21 && aces>0){ total-=10; aces--; }
+  return total;
+}
+
+function handString(hand, hideSecond=false) {
+  if(hideSecond) return `${hand[0].value}${hand[0].suit} ❓`;
+  return hand.map(c=>`${c.value}${c.suit}`).join(' ');
+}
+
+const bjSessions = {}; // active games
+
+bot.onText(/\/blackjack (\d+)/, async (msg, match)=>{
+  const chatId = msg.chat.id;
+  const uid = msg.from.id;
+  let bet = parseInt(match[1]);
+
+  ensureUser(uid, msg.from.username);
+  const user = users[uid];
+  if(!user.money) user.money = 50;
+  if(!user.xp) user.xp = 0;
+
+  if(bet > user.money) return bot.sendMessage(chatId, `❌ You don't have enough money. Balance: $${user.money}`);
+
+  // Initialize game session
+  const userHand = [drawCardEmoji(), drawCardEmoji()];
+  const dealerHand = [drawCardEmoji(), drawCardEmoji()];
+  bjSessions[uid] = { userHand, dealerHand, bet, doubled: false };
+
+  const text = `🃏 *Blackjack*\n\n`+
+               `Your Hand: ${handString(userHand)} — Total: ${handTotal(userHand)}\n`+
+               `Dealer's Hand: ${handString(dealerHand,true)}\n\n`+
+               `Bet: $${bet}`;
+
+  await bot.sendMessage(chatId,text,{
+    parse_mode:'Markdown',
+    reply_markup:{ inline_keyboard:[
+      [
+        { text:'🃏 Hit', callback_data:`bj_hit_${uid}` },
+        { text:'✋ Stand', callback_data:`bj_stand_${uid}` },
+        { text:'💰 Double Down', callback_data:`bj_double_${uid}` }
+      ]
+    ]}
+  });
+});
+
+// ================= INLINE HANDLER =================
+bot.on('callback_query', async q=>{
+  const chatId = q.message.chat.id;
+  const uid = q.from.id;
+  if(!bjSessions[uid]) return;
+  const session = bjSessions[uid];
+  const user = users[uid];
+  const data = q.data;
+  await bot.answerCallbackQuery(q.id);
+
+  function endGame(resultText) {
+    saveAll();
+    delete bjSessions[uid];
+    bot.editMessageText(resultText,{ chat_id:chatId, message_id:q.message.message_id, parse_mode:'Markdown' });
+  }
+
+  if(data === `bj_hit_${uid}`){
+    session.userHand.push(drawCardEmoji());
+    const total = handTotal(session.userHand);
+    if(total>21){
+      user.money -= session.bet;
+      endGame(`💥 Bust!\nYour Hand: ${handString(session.userHand)} — Total: ${total}\n❌ You lost $${session.bet}. Balance: $${user.money}`);
+    } else{
+      bot.editMessageText(`Your Hand: ${handString(session.userHand)} — Total: ${total}\nDealer's Hand: ${handString(session.dealerHand,true)}\n\nBet: $${session.bet}`,{
+        chat_id:chatId, message_id:q.message.message_id, parse_mode:'Markdown',
+        reply_markup:{ inline_keyboard:[
+          [
+            { text:'🃏 Hit', callback_data:`bj_hit_${uid}` },
+            { text:'✋ Stand', callback_data:`bj_stand_${uid}` },
+            { text:'💰 Double Down', callback_data:`bj_double_${uid}` }
+          ]
+        ]}
+      });
+    }
+  }
+
+  if(data === `bj_double_${uid}`){
+    if(session.doubled) return; // prevent double doubling
+    if(user.money < session.bet*2) return bot.answerCallbackQuery(q.id,{text:'Not enough balance to double down!',show_alert:true});
+    user.money -= session.bet; // pay extra bet
+    session.bet *= 2;
+    session.doubled = true;
+    session.userHand.push(drawCardEmoji());
+    const total = handTotal(session.userHand);
+    if(total>21){
+      endGame(`💥 Bust after Double Down!\nYour Hand: ${handString(session.userHand)} — Total: ${total}\n❌ You lost $${session.bet}. Balance: $${user.money}`);
+    } else{
+      data = `bj_stand_${uid}`; // automatically stand after double
+    }
+  }
+
+  if(data === `bj_stand_${uid}`){
+    let dealerTotal = handTotal(session.dealerHand);
+    while(dealerTotal<17){
+      session.dealerHand.push(drawCardEmoji());
+      dealerTotal = handTotal(session.dealerHand);
+    }
+
+    const userTotal = handTotal(session.userHand);
+    let result = `🃏 *Blackjack Result*\n\nYour Hand: ${handString(session.userHand)} — Total: ${userTotal}\n`+
+                 `Dealer's Hand: ${handString(session.dealerHand)} — Total: ${dealerTotal}\n\n`;
+
+    if(dealerTotal>21 || userTotal>dealerTotal){
+      user.money += session.bet;
+      user.xp += Math.floor(session.bet*0.2); // 20% XP of bet
+      result += `🎉 You win! Gained $${session.bet} and ${Math.floor(session.bet*0.2)} XP\nBalance: $${user.money}, XP: ${user.xp}`;
+    } else if(userTotal === dealerTotal){
+      result += `⚖️ Draw! Bet returned. Balance: $${user.money}, XP: ${user.xp}`;
+    } else{
+      user.money -= session.bet;
+      result += `💸 You lost $${session.bet}. Balance: $${user.money}, XP: ${user.xp}`;
+    }
+
+    endGame(result);
+  }
+});
+
 // ================= /cash COMMAND (ADMIN ONLY, SAFE RESET) =================
 bot.onText(/\/cash/, async (msg) => {
   const chatId = msg.chat.id;
