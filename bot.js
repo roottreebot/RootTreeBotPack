@@ -473,6 +473,75 @@ bot.on('callback_query', async (q) => {
   }
 });
 
+// ================= PAGINATED /BANLIST COMMAND =================
+const BANLIST_PAGE_SIZE = 5;
+
+// Show banlist with optional page
+async function showBanlist(chatId, page = 0) {
+  const bannedUsers = Object.entries(users).filter(([id, u]) => u.banned);
+  const totalPages = Math.ceil(bannedUsers.length / BANLIST_PAGE_SIZE) || 1;
+  page = Math.max(0, Math.min(page, totalPages - 1));
+
+  if (bannedUsers.length === 0) {
+    return bot.sendMessage(chatId, '✅ No banned users currently.');
+  }
+
+  const slice = bannedUsers.slice(page * BANLIST_PAGE_SIZE, (page + 1) * BANLIST_PAGE_SIZE);
+  let text = `🚫 *Banned Users* (Total: ${bannedUsers.length})\n_Page ${page + 1} of ${totalPages}_\n\n`;
+  const buttons = [];
+
+  slice.forEach(([id, u], i) => {
+    text += `${page * BANLIST_PAGE_SIZE + i + 1}. @${u.username || 'N/A'} — ChatID: \`${id}\`\n`;
+    buttons.push([{ text: `✅ Unban @${u.username || id}`, callback_data: `unban_${id}_page_${page}` }]);
+  });
+
+  // Navigation buttons
+  const navButtons = [];
+  if (page > 0) navButtons.push({ text: '⬅ Prev', callback_data: `banlist_page_${page - 1}` });
+  if (page < totalPages - 1) navButtons.push({ text: '➡ Next', callback_data: `banlist_page_${page + 1}` });
+  if (navButtons.length) buttons.push(navButtons);
+
+  await bot.sendMessage(chatId, text, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: buttons }
+  });
+}
+
+// ================= /banlist COMMAND HANDLER =================
+bot.onText(/\/banlist/, (msg) => {
+  const chatId = msg.chat.id;
+  if (!ADMIN_IDS.includes(chatId)) return;
+  showBanlist(chatId, 0);
+});
+
+// ================= INLINE BUTTON HANDLER =================
+bot.on('callback_query', async (q) => {
+  const chatId = q.message.chat.id;
+  const data = q.data;
+
+  if (!ADMIN_IDS.includes(chatId)) return;
+  await bot.answerCallbackQuery(q.id);
+
+  // Unban button
+  if (data.startsWith('unban_')) {
+    const [_, userId, __, page] = data.split('_');
+    if (users[userId]) {
+      users[userId].banned = false;
+      saveAll();
+      bot.sendMessage(chatId, `✅ User @${users[userId].username || userId} has been unbanned.`);
+      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+      showBanlist(chatId, Number(page)); // Refresh page
+    }
+  }
+
+  // Navigation buttons
+  if (data.startsWith('banlist_page_')) {
+    const page = Number(data.split('_')[2]);
+    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
+    showBanlist(chatId, page);
+  }
+});
+
 // ================= BROADCAST =================
 bot.onText(/\/broadcast (.+)/, async (msg, match) => {
   const adminId = msg.chat.id;
