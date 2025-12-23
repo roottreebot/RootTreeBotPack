@@ -919,6 +919,47 @@ bot.on('callback_query', async (q) => {
   }
 });
 
+// ================= /clear COMMAND (BEST POSSIBLE) =================
+bot.onText(/\/clear(?:\s+(\d+))?/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const fromId = msg.from.id;
+
+  if (!ADMIN_IDS.includes(fromId)) {
+    return bot.sendMessage(chatId, '❌ Admins only.');
+  }
+
+  const limit = Math.min(parseInt(match[1]) || 100, 500); // max 500
+  let deleted = 0;
+  let failed = 0;
+
+  const statusMsg = await bot.sendMessage(
+    chatId,
+    `🧹 Clearing last *${limit}* messages...`,
+    { parse_mode: 'Markdown' }
+  );
+
+  for (let i = 0; i <= limit; i++) {
+    try {
+      await bot.deleteMessage(chatId, msg.message_id - i);
+      deleted++;
+    } catch {
+      failed++;
+    }
+
+    // small delay to avoid flood limits
+    await new Promise(r => setTimeout(r, 35));
+  }
+
+  await bot.editMessageText(
+    `✅ *Clear Complete*\n\n🗑 Deleted: *${deleted}*\n⚠️ Skipped: *${failed}*`,
+    {
+      chat_id: chatId,
+      message_id: statusMsg.message_id,
+      parse_mode: 'Markdown'
+    }
+  );
+});
+
 // ================= BROADCAST =================
 bot.onText(/\/broadcast (.+)/, async (msg, match) => {
   const adminId = msg.chat.id;
