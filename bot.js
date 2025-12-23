@@ -197,7 +197,7 @@ async function showMainMenu(id, lbPage = 0) {
 `${storeStatus}
 🎚 Level: *${u.level}*
 📊 XP: ${xpBar(u.xp, u.level)}
-🔥 Streak: ${streakText(u)}
+${streakText(u)}
 📦 *Your Orders* (last 5)
 ${orders}
 
