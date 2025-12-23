@@ -999,8 +999,8 @@ bot.onText(/\/clear(?:\s+(\d+))?/, async (msg, match) => {
   );
 });
 
-// ================= /warn COMMAND =================
-bot.onText(/\/warn\s+@(\w+)\s+([\s\S]+)/, async (msg, match) => {
+// ================= /warn COMMAND (FIXED) =================
+bot.onText(/\/warn(?:\s+@?(\w+))?(?:\s+([\s\S]+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const adminId = msg.from.id;
 
@@ -1008,57 +1008,78 @@ bot.onText(/\/warn\s+@(\w+)\s+([\s\S]+)/, async (msg, match) => {
     return bot.sendMessage(chatId, '❌ Admins only.');
   }
 
-  const username = match[1].toLowerCase();
-  const reason = match[2].trim();
+  let targetId;
+  let reason;
 
-  const targetId = Object.keys(users).find(
-    id => users[id].username?.toLowerCase() === username
-  );
-
-  if (!targetId) {
-    return bot.sendMessage(chatId, `❌ User @${username} not found.`);
+  // ===== CASE 1: REPLY WARN =====
+  if (msg.reply_to_message) {
+    targetId = msg.reply_to_message.from.id;
+    reason = match[2];
+  } 
+  // ===== CASE 2: @username WARN =====
+  else if (match[1]) {
+    const uname = match[1].toLowerCase();
+    const found = Object.keys(users).find(
+      id => users[id].username?.toLowerCase() === uname
+    );
+    if (!found) {
+      return bot.sendMessage(chatId, '❌ User not found.');
+    }
+    targetId = Number(found);
+    reason = match[2];
+  } 
+  else {
+    return bot.sendMessage(
+      chatId,
+      '⚠️ Usage:\n' +
+      '`/warn @user reason`\n' +
+      'OR reply to a user:\n' +
+      '`/warn reason`',
+      { parse_mode: 'Markdown' }
+    );
   }
 
-  ensureUser(targetId, users[targetId].username);
+  if (!reason || !reason.trim()) {
+    return bot.sendMessage(chatId, '❌ You must provide a reason.');
+  }
 
-  const warning = {
-    reason,
+  ensureUser(targetId);
+
+  const warn = {
+    reason: reason.trim(),
     admin: msg.from.username || msg.from.id,
-    date: new Date().toISOString()
+    date: Date.now()
   };
 
-  users[targetId].warns.push(warning);
+  users[targetId].warns.push(warn);
   saveAll();
 
-  // ===== USER DM MESSAGE =====
-  const dmText =
+  // ===== DM USER =====
+  const dm =
 `⚠️ *You Have Been Warned*
 
-👤 User: @${users[targetId].username}
-🛡️ Issued by: @${msg.from.username || 'Admin'}
-🕒 Date: ${new Date().toLocaleString()}
+👤 User: ${users[targetId].username ? '@' + users[targetId].username : targetId}
+🛡️ Admin: @${msg.from.username || 'Admin'}
+📄 Reason:
+${warn.reason}
 
-📄 *Reason*
-${reason}
+📌 Continued rule violations may result in a ban.`;
 
-📌 Please follow the rules to avoid further action.
-Repeated warnings may result in restrictions or a ban.`;
-
-  let dmSent = true;
-
+  let dmOk = true;
   try {
-    await bot.sendMessage(targetId, dmText, { parse_mode: 'Markdown' });
+    await bot.sendMessage(targetId, dm, { parse_mode: 'Markdown' });
   } catch {
-    dmSent = false;
+    dmOk = false;
   }
 
-  // ===== ADMIN CONFIRMATION =====
+  // ===== CONFIRM ADMIN =====
   bot.sendMessage(chatId,
-    `✅ *Warning issued to* @${users[targetId].username}\n` +
-    `📄 Reason: ${reason}\n` +
-    `📊 Total warnings: ${users[targetId].warns.length}\n` +
-    `${dmSent ? '📨 User notified via DM.' : '⚠️ Could not DM user.'}`,
-    { parse_mode: 'Markdown' }
+`✅ *Warning Issued*
+👤 User: ${users[targetId].username ? '@' + users[targetId].username : targetId}
+📄 Reason: ${warn.reason}
+📊 Total warns: ${users[targetId].warns.length}
+${dmOk ? '📨 User notified.' : '⚠️ DM failed (user blocked bot).'}`,
+  { parse_mode: 'Markdown' }
   );
 });
 
