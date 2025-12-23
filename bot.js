@@ -81,6 +81,14 @@ function xpBar(xp, lvl) {
   return '🟩'.repeat(fill) + '⬜'.repeat(10 - fill) + ` ${xp}/${max}`;
 }
 
+// ================= STREAK DISPLAY =================
+function streakText(u) {
+  if (!u || !u.dailyStreak || u.dailyStreak < 1) {
+    return '🔥 Daily Streak: 0 days';
+  }
+  return `🔥 Daily Streak: ${u.dailyStreak} day${u.dailyStreak === 1 ? '' : 's'}`;
+}
+
 // ================= PRODUCTS =================
 const PRODUCTS = {
   'God Complex': { price: 10 },
@@ -189,7 +197,7 @@ async function showMainMenu(id, lbPage = 0) {
 `${storeStatus}
 🎚 Level: *${u.level}*
 📊 XP: ${xpBar(u.xp, u.level)}
-
+🔥 Streak: ${streakText(u)}
 📦 *Your Orders* (last 5)
 ${orders}
 
