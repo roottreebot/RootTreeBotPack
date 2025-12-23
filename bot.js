@@ -14,6 +14,17 @@ if (!TOKEN || !ADMIN_IDS.length) {
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+// ================= SLOTS CONFIG =================
+const SLOT_COOLDOWN = 10 * 1000; // 10s
+const SLOT_SYMBOLS = ['🍒', '🍋', '🍊', '🍉', '⭐'];
+const ULTRA_SYMBOL = '💎'; // ultra rare
+const ULTRA_CHANCE = 0.03; // 3% chance per reel
+
+function spinReel() {
+  if (Math.random() < ULTRA_CHANCE) return ULTRA_SYMBOL;
+  return SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
+}
+
 // ================= FILES =================
 const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
@@ -43,7 +54,7 @@ function ensureUser(id, username) {
       // 🔥 DAILY SYSTEM
       lastDaily: 0,
       dailyStreak: 0,
-
+      lastSlot: 0,
       warns: []
     };
   }
@@ -712,6 +723,109 @@ ${orders}`;
       }
     });
   }
+});
+
+// ================= /slots (ANIMATED + ULTRA) =================
+bot.onText(/\/slots (\d+)/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const uid = msg.from.id;
+  ensureUser(uid, msg.from.username);
+
+  const u = users[uid];
+  const bet = parseInt(match[1]);
+  const now = Date.now();
+
+  // ⏳ Cooldown
+  if (now - u.lastSlot < SLOT_COOLDOWN) {
+    const sec = Math.ceil((SLOT_COOLDOWN - (now - u.lastSlot)) / 1000);
+    return bot.sendMessage(chatId, `⏳ Wait *${sec}s* before spinning again`, {
+      parse_mode: 'Markdown'
+    });
+  }
+
+  if (bet <= 0) return bot.sendMessage(chatId, '❌ Bet must be above 0 XP');
+  if (bet > u.xp) return bot.sendMessage(chatId, `❌ You only have ${u.xp} XP`);
+
+  u.lastSlot = now;
+
+  // 🎞 Fake spin frames
+  const frames = [
+    '🎰\n┃ ❓ ┃ ❓ ┃ ❓ ┃',
+    '🎰\n┃ 🍒 ┃ ❓ ┃ ❓ ┃',
+    '🎰\n┃ 🍒 ┃ 🍋 ┃ ❓ ┃',
+  ];
+
+  const spinMsg = await bot.sendMessage(chatId, frames[0], { parse_mode: 'Markdown' });
+
+  await new Promise(r => setTimeout(r, 400));
+  await bot.editMessageText(frames[1], {
+    chat_id: chatId,
+    message_id: spinMsg.message_id,
+    parse_mode: 'Markdown'
+  });
+
+  await new Promise(r => setTimeout(r, 400));
+  await bot.editMessageText(frames[2], {
+    chat_id: chatId,
+    message_id: spinMsg.message_id,
+    parse_mode: 'Markdown'
+  });
+
+  // 🎰 Final spin
+  const r1 = spinReel();
+  const r2 = spinReel();
+  const r3 = spinReel();
+
+  let payout = 0;
+  let result = '';
+
+  // 💎 ULTRA JACKPOT
+  if (r1 === ULTRA_SYMBOL && r2 === ULTRA_SYMBOL && r3 === ULTRA_SYMBOL) {
+    payout = bet * 10;
+    result = '💎💎💎 *ULTRA JACKPOT!* x10';
+  }
+  // 🎯 Normal jackpot
+  else if (r1 === r2 && r2 === r3) {
+    payout = bet * 5;
+    result = '🎉 *JACKPOT!* x5';
+  }
+  // ⭐ Two match
+  else if (r1 === r2 || r2 === r3 || r1 === r3) {
+    payout = bet * 2;
+    result = '⭐ *Nice hit!* x2';
+  }
+  // ❌ Lose
+  else {
+    payout = -bet;
+    result = '💸 *No match*';
+  }
+
+  // Apply XP
+  if (payout > 0) {
+    giveXP(uid, payout);
+  } else {
+    u.xp += payout;
+    if (u.xp < 0) u.xp = 0;
+  }
+
+  saveAll();
+
+  // 🧾 Final result
+  await bot.editMessageText(
+`🎰 *SLOTS RESULT*
+
+┃ ${r1} ┃ ${r2} ┃ ${r3} ┃
+
+${result}
+
+🎯 Bet: *${bet} XP*
+📊 XP Now: *${u.xp}*`,
+    {
+      chat_id: chatId,
+      message_id: spinMsg.message_id,
+      parse_mode: 'Markdown'
+    }
+  );
 });
 
 // ================= /profile COMMAND =================
