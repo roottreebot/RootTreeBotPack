@@ -28,6 +28,10 @@ function saveAll() {
   fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2));
 }
 
+// ===== PROFILE CARD DEPENDENCIES =====
+const { createCanvas, loadImage } = require('canvas');
+const fetch = require('node-fetch');
+
 // ================= USERS =================
 function ensureUser(id, username) {
   if (!users[id]) {
@@ -42,6 +46,21 @@ function ensureUser(id, username) {
     };
   }
   if (username) users[id].username = username;
+}
+
+// ================= RANK BADGE =================
+function getRankBadge(userId) {
+  const sorted = Object.entries(users)
+    .filter(([, u]) => !u.banned)
+    .sort((a, b) => b[1].level - a[1].level || b[1].xp - a[1].xp);
+
+  const index = sorted.findIndex(([id]) => Number(id) === Number(userId));
+
+  if (index === 0) return '🥇 #1';
+  if (index === 1) return '🥈 #2';
+  if (index === 2) return '🥉 #3';
+  if (index >= 0 && index < 10) return '🎖️ Top 10';
+  return `#${index + 1}`;
 }
 
 // ================= XP =================
@@ -491,6 +510,142 @@ bot.on('callback_query', async (q) => {
       chat_id: chatId,
       message_id: q.message.message_id
     });
+  }
+});
+
+async function generateProfileCard(user, tgUser, bot) {
+  const width = 1080;
+  const height = 1080;
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext('2d');
+
+  // ===== DARK BACKGROUND =====
+  const bg = ctx.createLinearGradient(0, 0, 0, height);
+  bg.addColorStop(0, '#0b0f14');
+  bg.addColorStop(1, '#111827');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+
+  // ===== LOAD AVATAR =====
+  let avatar;
+  try {
+    const photos = await bot.getUserProfilePhotos(tgUser.id, { limit: 1 });
+    if (photos.total_count > 0) {
+      const fileId = photos.photos[0][0].file_id;
+      const file = await bot.getFile(fileId);
+      const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
+      const res = await fetch(url);
+      avatar = await loadImage(await res.buffer());
+    }
+  } catch {}
+
+  // ===== AVATAR CIRCLE =====
+  const size = 280;
+  const x = width / 2 - size / 2;
+  const y = 120;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(width / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+  ctx.clip();
+
+  if (avatar) {
+    ctx.drawImage(avatar, x, y, size, size);
+  } else {
+    ctx.fillStyle = '#1f2933';
+    ctx.fillRect(x, y, size, size);
+  }
+  ctx.restore();
+
+  // Glow ring
+  ctx.strokeStyle = '#22d3ee';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(width / 2, y + size / 2, size / 2 + 4, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // ===== TEXT =====
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#e5e7eb';
+  ctx.font = 'bold 52px Sans';
+  ctx.fillText(`@${tgUser.username || 'User'}`, width / 2, 460);
+
+  ctx.font = '34px Sans';
+  ctx.fillStyle = '#22d3ee';
+  ctx.fillText(`Rank ${getRankBadge(tgUser.id)}`, width / 2, 510);
+
+  ctx.font = '38px Sans';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(`Level ${user.level}`, width / 2, 570);
+
+  // ===== XP BAR =====
+  const barW = 640;
+  const barH = 26;
+  const barX = width / 2 - barW / 2;
+  const barY = 610;
+
+  ctx.fillStyle = '#1f2933';
+  ctx.fillRect(barX, barY, barW, barH);
+
+  const maxXP = user.level * 5;
+  const progress = Math.min(user.xp / maxXP, 1);
+  ctx.fillStyle = '#22c55e';
+  ctx.fillRect(barX, barY, barW * progress, barH);
+
+  ctx.font = '28px Sans';
+  ctx.fillStyle = '#e5e7eb';
+  ctx.fillText(`${user.xp}/${maxXP} XP`, width / 2, barY + 60);
+
+  // ===== STATS =====
+  ctx.font = '32px Sans';
+  ctx.fillText(`Weekly XP: ${user.weeklyXp}`, width / 2, 720);
+  ctx.fillText(`Orders: ${user.orders.length}`, width / 2, 770);
+  ctx.fillStyle = '#9ca3af';
+  ctx.fillText(`ID: ${tgUser.id}`, width / 2, 830);
+
+  return canvas.toBuffer('image/png');
+}
+
+// ================= /profile COMMAND =================
+bot.onText(/\/profile(?:\s+@?(\w+))?/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const fromId = msg.from.id;
+
+  let targetId = fromId;
+  let tgUser = msg.from;
+
+  // ===== ADMIN VIEW =====
+  if (match[1]) {
+    if (!ADMIN_IDS.includes(fromId)) {
+      return bot.sendMessage(chatId, '❌ Admins only.');
+    }
+
+    const uname = match[1].toLowerCase();
+    const foundId = Object.keys(users).find(
+      id => users[id].username?.toLowerCase() === uname
+    );
+
+    if (!foundId) {
+      return bot.sendMessage(chatId, `❌ User @${uname} not found`);
+    }
+
+    targetId = Number(foundId);
+    tgUser = { id: targetId, username: users[targetId].username };
+  }
+
+  ensureUser(targetId, tgUser.username);
+
+  try {
+    const buffer = await generateProfileCard(users[targetId], tgUser, bot);
+    bot.sendPhoto(chatId, buffer, {
+      caption: targetId === fromId
+        ? '👤 *Your Profile*'
+        : '🛡️ *Admin Profile View*',
+      parse_mode: 'Markdown'
+    });
+  } catch (err) {
+    console.error(err);
+    bot.sendMessage(chatId, '❌ Failed to generate profile card.');
   }
 });
 
