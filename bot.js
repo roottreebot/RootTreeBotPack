@@ -30,6 +30,13 @@ function spinReel() {
 // ================= FILES =================
 const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
+const SHOP_DB_FILE = 'shop.json';
+let db = fs.existsSync(SHOP_DB_FILE) ? JSON.parse(fs.readFileSync(SHOP_DB_FILE)) : {};
+
+function saveDB() {
+  fs.writeFileSync(SHOP_DB_FILE, JSON.stringify(db, null, 2));
+}
+
 const FEEDBACK_FILE = 'feedback.json';
 
 let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
@@ -680,7 +687,7 @@ bot.onText(/\/userstats (.+)/, async (msg, match) => {
 
 // ================= GLOBAL SHOP PAGE FUNCTION =================
 function sendShopPage(chatId, userId, page = 1) {
-  if (!db[userId]) db[userId] = { xp: 0, roles: [] };
+  if (!db[userId]) db[userId] = { xp: users[userId]?.xp || 0, roles: [] }; // link XP to main user
   const userData = db[userId];
 
   const rolesPerPage = 10;
@@ -712,16 +719,17 @@ function sendShopPage(chatId, userId, page = 1) {
 bot.onText(/\/shop/, (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
+  ensureUser(userId, msg.from.username);
   sendShopPage(chatId, userId, 1); // start with page 1
 });
 
-// ================= CALLBACK HANDLER =================
-bot.on("callback_query", (query) => {
+// ================= CALLBACK HANDLER FOR SHOP =================
+bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const userId = query.from.id;
   const data = query.data;
 
-  if (!db[userId]) db[userId] = { xp: 0, roles: [] };
+  if (!db[userId]) db[userId] = { xp: users[userId]?.xp || 0, roles: [] };
   const userData = db[userId];
 
   if (data.startsWith("buy_")) {
@@ -747,7 +755,7 @@ bot.on("callback_query", (query) => {
 
   if (data.startsWith("shop_")) {
     const page = parseInt(data.split("_")[1]);
-    bot.deleteMessage(chatId, query.message.message_id); // remove old page
+    bot.deleteMessage(chatId, query.message.message_id).catch(() => {});
     sendShopPage(chatId, userId, page);
   }
 });
