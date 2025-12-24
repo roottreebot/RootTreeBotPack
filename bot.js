@@ -289,7 +289,7 @@ bot.onText(/\/start|\/help/, async msg => {
 bot.on('callback_query', async (q) => {
   const id = q.message.chat.id;
   const data = q.data;
-  ensureUser(id, q.from.username); // make sure user exists
+  ensureUser(id, q.from.username);
   const s = sessions[id] || (sessions[id] = {});
   const u = users[id];
 
@@ -297,12 +297,10 @@ bot.on('callback_query', async (q) => {
 
   // ================== CHANGE ROLE ==================
   if (data === 'change_role') {
-    // Build list of roles user can buy or assign
     const availableRoles = Object.keys(ROLE_SHOP).map(r => [{ text: `${r} ($${ROLE_SHOP[r].price})`, callback_data: `role_${r}` }]);
-    return bot.editMessageText('🎭 Select a role to change:', { 
-      chat_id: id, 
-      message_id: q.message.message_id, 
-      reply_markup: { inline_keyboard: availableRoles } 
+    return sendOrEdit(id, '🎭 Select a role to change:', {
+      message_id: q.message.message_id,
+      reply_markup: { inline_keyboard: availableRoles }
     });
   }
 
@@ -313,20 +311,19 @@ bot.on('callback_query', async (q) => {
     if (!u.roles.includes(role)) {
       u.roles.push(role);
       saveAll();
-      return bot.editMessageText(`✅ Your new role: *${role}*`, { chat_id: id, message_id: q.message.message_id, parse_mode: 'Markdown' });
+      return sendOrEdit(id, `✅ Your new role: *${role}*`, { message_id: q.message.message_id, parse_mode: 'Markdown' });
     } else {
       return bot.answerCallbackQuery(q.id, { text: '❌ You already have this role', show_alert: true });
     }
   }
 
   // ================== REFRESH MAIN MENU ==================
-  if (data === 'reload') return showMainMenu(id);
+  if (data === 'reload') return showMainMenu(id, q.message.message_id);
 
   // ================== SHOP PAGINATION ==================
   if (data.startsWith('shop_page_')) {
     const page = Number(data.split('_')[2]);
-    bot.deleteMessage(id, q.message.message_id).catch(() => {});
-    return showShop(id, page);
+    return showShop(id, page, q.message.message_id);
   }
 
   // ================== BUY ROLE ==================
@@ -342,21 +339,27 @@ bot.on('callback_query', async (q) => {
     saveAll();
 
     bot.answerCallbackQuery(q.id, { text: `✅ Purchased ${role} for ${price} XP!` });
-    return showShop(id, 0);
+    return showShop(id, 0, q.message.message_id);
   }
 
   // ================== LEADERBOARD PAGINATION ==================
   if (data.startsWith('lb_')) {
     const page = Math.max(0, Number(data.split('_')[1]));
-    return showLeaderboard(id, page);
+    return showLeaderboard(id, page, q.message.message_id);
+  }
+
+  // ================== WEEKLY LEADERBOARD ==================
+  if (data.startsWith('weekly_')) {
+    const page = Math.max(0, Number(data.split('_')[1]));
+    return showWeekly(id, page, q.message.message_id);
   }
 
   // ================== STORE OPEN/CLOSE ==================
   if (data === 'store_open' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = true; saveAll(); return showMainMenu(id);
+    meta.storeOpen = true; saveAll(); return showMainMenu(id, q.message.message_id);
   }
   if (data === 'store_close' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = false; saveAll(); return showMainMenu(id);
+    meta.storeOpen = false; saveAll(); return showMainMenu(id, q.message.message_id);
   }
 
   // ================== PRODUCT ORDERS ==================
@@ -370,7 +373,7 @@ bot.on('callback_query', async (q) => {
 
     s.product = data.replace('product_', '');
     s.step = 'amount';
-    return sendOrEdit(id, `✏️ Send grams or $ amount for *${s.product}*`);
+    return sendOrEdit(id, `✏️ Send grams or $ amount for *${s.product}*`, { message_id: q.message.message_id, parse_mode: 'Markdown' });
   }
 
   // ================== CONFIRM ORDER ==================
@@ -398,7 +401,7 @@ bot.on('callback_query', async (q) => {
       order.adminMsgs.push({ admin, msgId: m.message_id });
     }
 
-    return showMainMenu(id);
+    return showMainMenu(id, q.message.message_id);
   }
 
   // ================== ADMIN ACTIONS ==================
@@ -419,10 +422,10 @@ bot.on('callback_query', async (q) => {
     }
 
     saveAll();
-    return showMainMenu(userId);
+    return showMainMenu(userId, q.message.message_id);
   }
 });
-
+  
 // ================= USER INPUT =================
 bot.on('message', msg => {
   const id = msg.chat.id;
