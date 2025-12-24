@@ -109,6 +109,36 @@ const PRODUCTS = {
   'Killer Green Budz': { price: 10 }
 };
 
+// ================= ROLES SHOP =================
+const ROLE_SHOP = {
+  "🌟 Novice": { price: 50 },
+  "🔥 Apprentice": { price: 100 },
+  "💎 Adept": { price: 200 },
+  "⚡ Expert": { price: 350 },
+  "🌈 Master": { price: 550 },
+  "👑 Grandmaster": { price: 800 },
+  "🚀 Legendary": { price: 1200 },
+  "🛡️ Elite": { price: 1700 },
+  "⚔️ Champion": { price: 2300 },
+  "🏆 Mythic": { price: 3000 }
+};
+
+// ================= HELPER FUNCTIONS =================
+function getHighestRole(user) {
+  if (!user.roles || user.roles.length === 0) return "_No role_";
+
+  // ROLE_SHOP keys in order of increasing price
+  const roleNames = Object.keys(ROLE_SHOP);
+  
+  // Find the highest role the user owns
+  let highest = "_No role_";
+  for (const role of roleNames) {
+    if (user.roles.includes(role)) highest = role;
+  }
+
+  return highest;
+}
+
 // ================= SESSIONS =================
 const sessions = {};
 
@@ -209,6 +239,7 @@ async function showMainMenu(id, lbPage = 0) {
   await sendOrEdit(
     id,
 `${storeStatus}
+👑 Highest Role: *${highestRole}*
 🎚 Level: *${u.level}*
 📊 XP: ${xpBar(u.xp, u.level)}
 ${streakText(u)}
@@ -687,6 +718,51 @@ ${orders}`;
   }
 });
 
+// ================= /shop =================
+bot.onText(/\/shop/, (msg) => {
+  const chatId = msg.chat.id;
+  let text = "*Available Roles (Buy with XP):*\n\n";
+
+  for (const roleName in ROLE_SHOP) {
+    text += `${roleName} — *${ROLE_SHOP[roleName].price} XP*\n`;
+  }
+
+  text += `\nUse /buy <role name> to purchase a role!`;
+  bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+});
+
+// ================= /buy =================
+bot.onText(/\/buy (.+)/, (msg, match) => {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  ensureUser(userId, msg.from.username);
+
+  const roleName = match[1].trim();
+  const item = ROLE_SHOP[roleName];
+
+  if (!item) return bot.sendMessage(chatId, `❌ Role not found in shop.`);
+
+  const user = users[userId];
+
+  // Initialize XP if missing
+  if (user.xp === undefined) user.xp = 0;
+
+  if (user.xp < item.price) {
+    return bot.sendMessage(chatId, `❌ You need *${item.price} XP* to buy ${roleName} — you have *${user.xp} XP*`, { parse_mode: "Markdown" });
+  }
+
+  // Deduct XP & store role
+  user.xp -= item.price;
+  if (!user.roles) user.roles = [];
+  if (user.roles.includes(roleName)) {
+    return bot.sendMessage(chatId, `⚠️ You already own *${roleName}*`, { parse_mode: "Markdown" });
+  }
+  user.roles.push(roleName);
+  saveAll();
+
+  bot.sendMessage(chatId, `✅ You bought *${roleName}*!`, { parse_mode: "Markdown" });
+});
+
 // ================= /slots (ANIMATED + ULTRA) =================
 bot.onText(/\/slots (\d+)/, async (msg, match) => {
   const chatId = msg.chat.id;
@@ -797,17 +873,20 @@ bot.onText(/\/profile/, async (msg) => {
 
   ensureUser(userId, msg.from.username);
   const u = users[userId];
+  const roles = u.roles?.length ? u.roles.join(", ") : "_No roles owned yet_";
 
-  const profileText =
-`👤 *User Profile*
+  const profileText = `
+👤 *User Profile*
 
 🆔 ID: \`${userId}\`
 👑 Level: *${u.level}*
 📊 XP: ${xpBar(u.xp, u.level)}
 📅 Weekly XP: *${u.weeklyXp}*
 
-📦 Orders: *${u.orders.length}*
-🚫 Banned: *${u.banned ? 'Yes' : 'No'}*`;
+📛 Roles: *${roles}*
+📦 Orders: *${u.orders?.length || 0}*
+🚫 Banned: *${u.banned ? 'Yes' : 'No'}*
+  `;
 
   try {
     // Try to fetch profile photo
