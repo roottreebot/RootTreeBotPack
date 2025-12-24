@@ -595,145 +595,67 @@ ${comparison}`;
   }
 });
 
-// ================= /userstats COMMAND WITH INLINE REFRESH =================
-bot.onText(/\/userstats\s+@?(\w+)/, async (msg, match) => {
+// ================= ADMIN /userstats =================
+bot.onText(/\/userstats (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
-  if (!ADMIN_IDS.includes(chatId)) return; // Only admins
+  const adminId = msg.from.id;
 
-  const username = match[1].toLowerCase();
-  const userId = Object.keys(users).find(id => users[id].username?.toLowerCase() === username);
-
-  if (!userId || !users[userId]) {
-    return bot.sendMessage(chatId, `❌ User @${username} not found`);
+  // Admin only
+  if (!ADMIN_IDS.includes(adminId)) {
+    return bot.sendMessage(chatId, '❌ Admin only command.');
   }
 
-  const sendStats = async () => {
-    const u = users[userId];
-    const orders = u.orders.length
-      ? u.orders.map((o, i) => `${i+1}. ${o.product} — ${o.grams}g — $${o.cash} — ${o.status}`).join('\n')
-      : 'No orders yet';
+  const input = match[1].replace('@', '').trim();
+  let targetId = null;
 
-    const text = `📊 *User Stats* — @${u.username || userId}
-
-🆔 Chat ID: \`${userId}\`
-🎚 Level: *${u.level}*
-📊 XP: ${u.xp}
-📅 Weekly XP: ${u.weeklyXp}
-🚫 Banned: ${u.banned ? 'Yes' : 'No'}
-
-📦 Orders:
-${orders}`;
-
-    const msgObj = await bot.sendMessage(chatId, text, {
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '🔄 Refresh', callback_data: `userstats_refresh_${userId}` },
-            { text: '⚠️ Reset Weekly XP', callback_data: `userstats_resetweekly_${userId}` }
-          ]
-        ]
-      }
-    });
-    return msgObj;
-  };
-
-  await sendStats();
-});
-
-// ================= INLINE HANDLER FOR /userstats =================
-bot.on('callback_query', async q => {
-  const chatId = q.message.chat.id;
-  const data = q.data;
-
-  if (!ADMIN_IDS.includes(chatId)) return;
-  await bot.answerCallbackQuery(q.id);
-
-  if (data.startsWith('userstats_refresh_')) {
-    const userId = data.split('_')[2];
-    if (!users[userId]) return bot.sendMessage(chatId, '❌ User not found');
-
-    const u = users[userId];
-    const orders = u.orders.length
-      ? u.orders.map((o, i) => `${i+1}. ${o.product} — ${o.grams}g — $${o.cash} — ${o.status}`).join('\n')
-      : 'No orders yet';
-
-    const text = `📊 *User Stats* — @${u.username || userId}
-
-🆔 Chat ID: \`${userId}\`
-🎚 Level: *${u.level}*
-📊 XP: ${u.xp}
-📅 Weekly XP: ${u.weeklyXp}
-🚫 Banned: ${u.banned ? 'Yes' : 'No'}
-
-📦 Orders:
-${orders}`;
-
-    await bot.editMessageText(text, {
-      chat_id: chatId,
-      message_id: q.message.message_id,
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '🔄 Refresh', callback_data: `userstats_refresh_${userId}` },
-            { text: '⚠️ Reset Weekly XP', callback_data: `userstats_resetweekly_${userId}` }
-          ]
-        ]
-      }
-    });
+  // Find user by ID
+  if (!isNaN(input)) {
+    targetId = Number(input);
+  } else {
+    // Find user by username
+    const found = Object.values(users).find(
+      u => u.username && u.username.toLowerCase() === input.toLowerCase()
+    );
+    if (found) targetId = found.id;
   }
 
-  if (data.startsWith('userstats_resetweekly_')) {
-    const userId = data.split('_')[2];
-    if (!users[userId]) return bot.sendMessage(chatId, '❌ User not found');
-
-    users[userId].weeklyXp = 0;
-    saveAll();
-
-    const u = users[userId];
-    const orders = u.orders.length
-      ? u.orders.map((o, i) => `${i+1}. ${o.product} — ${o.grams}g — $${o.cash} — ${o.status}`).join('\n')
-      : 'No orders yet';
-
-    const text = `📊 *User Stats* — @${u.username || userId} (Weekly XP reset!)
-
-🆔 Chat ID: \`${userId}\`
-🎚 Level: *${u.level}*
-📊 XP: ${u.xp}
-📅 Weekly XP: ${u.weeklyXp}
-🚫 Banned: ${u.banned ? 'Yes' : 'No'}
-
-📦 Orders:
-${orders}`;
-
-    await bot.editMessageText(text, {
-      chat_id: chatId,
-      message_id: q.message.message_id,
-      parse_mode: 'Markdown',
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: '🔄 Refresh', callback_data: `userstats_refresh_${userId}` },
-            { text: '⚠️ Reset Weekly XP', callback_data: `userstats_resetweekly_${userId}` }
-          ]
-        ]
-      }
-    });
-  }
-});
-
-// ================= /shop =================
-bot.onText(/\/shop/, (msg) => {
-  const chatId = msg.chat.id;
-  let text = "*Available Roles (Buy with XP):*\n\n";
-
-  for (const roleName in ROLE_SHOP) {
-    text += `${roleName} — *${ROLE_SHOP[roleName].price} XP*\n`;
+  if (!targetId || !users[targetId]) {
+    return bot.sendMessage(chatId, '❌ User not found in database.');
   }
 
-  text += `\nUse /buy <role name> to purchase a role!`;
-  bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+  const u = users[targetId];
+  const roles = u.roles?.length ? u.roles.join(', ') : '_No roles owned yet_';
+  const highestRole = getHighestRole(u);
+
+  const profileText = `
+👤 *User Profile*
+
+🆔 ID: \`${u.id}\`
+👑 Level: *${u.level}*
+📊 XP: ${xpBar(u.xp, u.level)}
+📅 Weekly XP: *${u.weeklyXp}*
+
+👑 Highest Role: *${highestRole}*
+📛 Roles: *${roles}*
+
+📦 Orders: *${u.orders?.length || 0}*
+🚫 Banned: *${u.banned ? 'Yes' : 'No'}*
+  `;
+
+  try {
+    const photos = await bot.getUserProfilePhotos(targetId, { limit: 1 });
+
+    if (photos.total_count > 0) {
+      const fileId = photos.photos[0][photos.photos[0].length - 1].file_id;
+
+      return bot.sendPhoto(chatId, fileId, {
+        caption: profileText,
+        parse_mode: 'Markdown'
+      });
+    }
+  } catch (err) {}
+
+  bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
 });
 
 // ================= /buy COMMAND =================
