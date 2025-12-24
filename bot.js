@@ -709,66 +709,108 @@ bot.onText(/\/shop/, msg => {
   bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
 });
 
-// ================= /buy (ROLES + COSMETICS) =================
-bot.onText(/\/buy (.+)/, (msg, match) => {
+// ================= /buy COMMAND (SMART MATCHING) =================
+bot.onText(/\/buy (.+)/i, (msg, match) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
 
   ensureUser(userId, msg.from.username);
-  const user = users[userId];
-  const input = match[1].toLowerCase().trim();
+  const u = users[userId];
 
-  // -------- ROLE BUY --------
-  let roleName = Object.keys(ROLE_SHOP).find(r =>
-    r.toLowerCase().includes(input)
-  );
+  const inputRaw = match[1].trim().toLowerCase();
 
-  if (roleName) {
-    const price = ROLE_SHOP[roleName].price;
+  const normalize = s =>
+    s.toLowerCase()
+     .replace(/[^a-z0-9]/g, '');
 
-    if (user.xp < price) {
-      return bot.sendMessage(chatId, `❌ Need *${price} XP* for ${roleName}.`, { parse_mode: 'Markdown' });
+  const input = normalize(inputRaw);
+
+  let matches = [];
+
+  // 🔍 Search roles
+  for (const [name, data] of Object.entries(ROLE_SHOP)) {
+    if (normalize(name).includes(input)) {
+      matches.push({
+        type: 'role',
+        name,
+        price: data.price
+      });
     }
-
-    if (!user.roles) user.roles = [];
-    if (user.roles.includes(roleName)) {
-      return bot.sendMessage(chatId, `⚠️ You already own *${roleName}*.`, { parse_mode: 'Markdown' });
-    }
-
-    user.xp -= price;
-    user.roles.push(roleName);
-    saveAll();
-
-    return bot.sendMessage(chatId, `✅ Bought role *${roleName}*!`, { parse_mode: 'Markdown' });
   }
 
-  // -------- COSMETIC BUY --------
-  for (const category in COSMETIC_STORE) {
-    const itemName = Object.keys(COSMETIC_STORE[category]).find(i =>
-      i.toLowerCase().includes(input)
-    );
-
-    if (!itemName) continue;
-
-    const price = COSMETIC_STORE[category][itemName].price;
-
-    if (user.xp < price) {
-      return bot.sendMessage(chatId, `❌ Need *${price} XP* for ${itemName}.`, { parse_mode: 'Markdown' });
+  // 🔍 Search cosmetics
+  for (const type of Object.keys(COSMETIC_STORE)) {
+    for (const [name, data] of Object.entries(COSMETIC_STORE[type])) {
+      if (normalize(name).includes(input)) {
+        matches.push({
+          type: 'cosmetic',
+          cosmeticType: type,
+          name,
+          price: data.price
+        });
+      }
     }
+  }
 
-    user.xp -= price;
-    user.cosmetics[category] = itemName;
-    saveAll();
-
+  // ❌ Nothing found
+  if (matches.length === 0) {
     return bot.sendMessage(
       chatId,
-      `🎨 Equipped *${itemName}* (${category}).`,
+      `❌ Could not find anything matching:\n*${match[1]}*\n\nUse /shop to see available items.`,
       { parse_mode: 'Markdown' }
     );
   }
 
-  // -------- NOT FOUND --------
-  bot.sendMessage(chatId, '❌ Item not found. Use /shop to see available items.');
+  // ⚠️ Multiple matches → suggest
+  if (matches.length > 1) {
+    let text = `🤔 *Multiple items found*\n\n`;
+    for (const m of matches) {
+      text += `• ${m.name} (${m.type}) — *${m.price} XP*\n`;
+    }
+    text += `\nPlease type a more specific name.`;
+
+    return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+  }
+
+  // ✅ Single match
+  const item = matches[0];
+
+  if (u.xp < item.price) {
+    return bot.sendMessage(
+      chatId,
+      `❌ Not enough XP.\nYou have *${u.xp} XP* but need *${item.price} XP*.`,
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  // 🧾 Already owned?
+  if (item.type === 'role') {
+    if (u.roles.includes(item.name)) {
+      return bot.sendMessage(chatId, `⚠️ You already own *${item.name}*.`);
+    }
+
+    u.roles.push(item.name);
+  }
+
+  if (item.type === 'cosmetic') {
+    u.cosmetics ||= {};
+    u.cosmetics[item.cosmeticType] ||= [];
+
+    if (u.cosmetics[item.cosmeticType].includes(item.name)) {
+      return bot.sendMessage(chatId, `⚠️ You already own *${item.name}*.`);
+    }
+
+    u.cosmetics[item.cosmeticType].push(item.name);
+  }
+
+  u.xp -= item.price;
+  saveAll();
+
+  bot.sendMessage(
+    chatId,
+    `✅ *Purchase successful!*\n\nYou bought *${item.name}* for *${item.price} XP*.`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
 // ================= /slots (ANIMATED + ULTRA) =================
