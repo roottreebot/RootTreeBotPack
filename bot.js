@@ -119,6 +119,7 @@ const PRODUCTS = {
 // ================= ROLES SHOP =================
 const ROLE_SHOP = {
   "🌟 Novice": { price: 50 },
+  "🌀 Initiate": { price: 50 },
   "🔥 Apprentice": { price: 100 },
   "💎 Adept": { price: 200 },
   "⚡ Expert": { price: 350 },
@@ -128,6 +129,25 @@ const ROLE_SHOP = {
   "🛡️ Elite": { price: 1700 },
   "⚔️ Champion": { price: 2300 },
   "🏆 Mythic": { price: 3000 }
+  "🔥 Spark": { price: 120 },
+  "💠 Shard": { price: 180 },
+  "⚡ Bolt": { price: 260 },
+  "🌈 Prism": { price: 350 },
+  "👑 Sovereign": { price: 450 },
+  "🚀 Comet": { price: 600 },
+  "🛡️ Guardian": { price: 750 },
+  "⚔️ Warlord": { price: 950 },
+  "🏆 Titan": { price: 1200 },
+  "🌟 Celestial": { price: 1500 },
+  "🔥 Inferno": { price: 1800 },
+  "💎 Radiant": { price: 2100 },
+  "⚡ Storm": { price: 2500 },
+  "🌈 Aurora": { price: 2900 },
+  "👑 Emperor": { price: 3400 },
+  "🚀 Voyager": { price: 4000 },
+  "🛡️ Sentinel": { price: 4700 },
+  "⚔️ Conqueror": { price: 5500 },
+  "🏆 Immortal": { price: 6500 },
 };
 
 // ================= HELPER FUNCTIONS =================
@@ -684,29 +704,42 @@ bot.onText(/\/userstats (.+)/, async (msg, match) => {
 });
 
 // ================= /shop =================
-bot.onText(/\/shop/, msg => {
-  const chatId = msg.chat.id;
+const SHOP_PAGE_SIZE = 5;
 
-  let text = '*🛒 Shop (XP Based)*\n\n';
+function showShop(chatId, page = 0) {
+  const allRoles = Object.entries(ROLE_SHOP);
+  const totalPages = Math.ceil(allRoles.length / SHOP_PAGE_SIZE) || 1;
+  page = Math.max(0, Math.min(page, totalPages - 1));
 
-  // Roles
-  text += '*👑 Roles*\n';
-  for (const r in ROLE_SHOP) {
-    text += `• ${r} — *${ROLE_SHOP[r].price} XP*\n`;
-  }
+  const slice = allRoles.slice(page * SHOP_PAGE_SIZE, (page + 1) * SHOP_PAGE_SIZE);
 
-  // Cosmetics
-  text += '\n*🎨 Profile Cosmetics*\n';
-  for (const cat in COSMETIC_STORE) {
-    text += `\n*${cat.toUpperCase()}*\n`;
-    for (const item in COSMETIC_STORE[cat]) {
-      text += `• ${item} — *${COSMETIC_STORE[cat][item].price} XP*\n`;
-    }
-  }
+  let text = `🛒 *Role Shop*\n_Page ${page + 1}/${totalPages}_\n\n`;
+  slice.forEach(([name, { price }], i) => {
+    text += `${i + 1}. ${name} — ${price} XP\n`;
+  });
 
-  text += '\nBuy with:\n`/buy <item name>`';
+  const buttons = [];
+  if (page > 0) buttons.push({ text: '⬅ Prev', callback_data: `shop_page_${page - 1}` });
+  if (page < totalPages - 1) buttons.push({ text: '➡ Next', callback_data: `shop_page_${page + 1}` });
 
-  bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+  bot.sendMessage(chatId, text, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: buttons.length ? [buttons] : [] }
+  });
+}
+
+// Command
+bot.onText(/\/shop/, (msg) => {
+  showShop(msg.chat.id, 0);
+});
+
+// Pagination handler
+bot.on('callback_query', async q => {
+  const data = q.data;
+  if (!data.startsWith('shop_page_')) return;
+  const page = Number(data.split('_')[2]);
+  bot.deleteMessage(q.message.chat.id, q.message.message_id).catch(() => {});
+  showShop(q.message.chat.id, page);
 });
 
 // ================= /buy COMMAND (SMART MATCHING) =================
