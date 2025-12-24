@@ -718,107 +718,51 @@ bot.on('callback_query', async q => {
 });
 
 // ================= /buy COMMAND (SMART MATCHING) =================
-bot.onText(/\/buy (.+)/i, (msg, match) => {
+bot.onText(/\/buy (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
+  const input = match[1].trim();
 
-  ensureUser(userId, msg.from.username);
-  const u = users[userId];
+  // Get user's current balance and roles
+  const userData = db[userId] || { balance: 0, roles: [] }; // Adjust based on your db structure
 
-  const inputRaw = match[1].trim().toLowerCase();
-
-  const normalize = s =>
-    s.toLowerCase()
-     .replace(/[^a-z0-9]/g, '');
-
-  const input = normalize(inputRaw);
-
-  let matches = [];
-
-  // 🔍 Search roles
-  for (const [name, data] of Object.entries(ROLE_SHOP)) {
-    if (normalize(name).includes(input)) {
-      matches.push({
-        type: 'role',
-        name,
-        price: data.price
-      });
-    }
-  }
-
-  // 🔍 Search cosmetics
-  for (const type of Object.keys(COSMETIC_STORE)) {
-    for (const [name, data] of Object.entries(COSMETIC_STORE[type])) {
-      if (normalize(name).includes(input)) {
-        matches.push({
-          type: 'cosmetic',
-          cosmeticType: type,
-          name,
-          price: data.price
-        });
-      }
-    }
-  }
-
-  // ❌ Nothing found
-  if (matches.length === 0) {
-    return bot.sendMessage(
-      chatId,
-      `❌ Could not find anything matching:\n*${match[1]}*\n\nUse /shop to see available items.`,
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  // ⚠️ Multiple matches → suggest
-  if (matches.length > 1) {
-    let text = `🤔 *Multiple items found*\n\n`;
-    for (const m of matches) {
-      text += `• ${m.name} (${m.type}) — *${m.price} XP*\n`;
-    }
-    text += `\nPlease type a more specific name.`;
-
-    return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
-  }
-
-  // ✅ Single match
-  const item = matches[0];
-
-  if (u.xp < item.price) {
-    return bot.sendMessage(
-      chatId,
-      `❌ Not enough XP.\nYou have *${u.xp} XP* but need *${item.price} XP*.`,
-      { parse_mode: 'Markdown' }
-    );
-  }
-
-  // 🧾 Already owned?
-  if (item.type === 'role') {
-    if (u.roles.includes(item.name)) {
-      return bot.sendMessage(chatId, `⚠️ You already own *${item.name}*.`);
-    }
-
-    u.roles.push(item.name);
-  }
-
-  if (item.type === 'cosmetic') {
-    u.cosmetics ||= {};
-    u.cosmetics[item.cosmeticType] ||= [];
-
-    if (u.cosmetics[item.cosmeticType].includes(item.name)) {
-      return bot.sendMessage(chatId, `⚠️ You already own *${item.name}*.`);
-    }
-
-    u.cosmetics[item.cosmeticType].push(item.name);
-  }
-
-  u.xp -= item.price;
-  saveAll();
-
-  bot.sendMessage(
-    chatId,
-    `✅ *Purchase successful!*\n\nYou bought *${item.name}* for *${item.price} XP*.`,
-    { parse_mode: 'Markdown' }
+  // Find rank by exact name (case-insensitive)
+  const rankName = Object.keys(ROLE_SHOP).find(
+    r => r.toLowerCase() === input.toLowerCase()
   );
+
+  if (!rankName) {
+    // If rank not found, show full list
+    let reply = "💼 Available Ranks:\n\n";
+    let i = 1;
+    for (const [role, info] of Object.entries(ROLE_SHOP)) {
+      reply += `${i}. ${role} — ${info.price} coins\n`;
+      i++;
+    }
+    reply += `\nUse /buy <rank name> to purchase.`;
+    return bot.sendMessage(chatId, reply);
+  }
+
+  // Check if user already has this rank
+  if (userData.roles.includes(rankName)) {
+    return bot.sendMessage(chatId, `❌ You already own **${rankName}**!`);
+  }
+
+  const price = ROLE_SHOP[rankName].price;
+
+  if (userData.balance < price) {
+    return bot.sendMessage(chatId, `❌ You need ${price} coins to buy **${rankName}**. You have ${userData.balance} coins.`);
+  }
+
+  // Deduct balance and assign role
+  userData.balance -= price;
+  userData.roles.push(rankName);
+
+  // Save back to db
+  db[userId] = userData;
+  saveDB(); // Make sure you have a function to save your db
+
+  bot.sendMessage(chatId, `✅ You bought **${rankName}** for ${price} coins!`);
 });
 
 // ================= /slots (ANIMATED + ULTRA) =================
