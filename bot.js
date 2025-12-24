@@ -286,77 +286,89 @@ bot.onText(/\/start|\/help/, async msg => {
 });
 
 // ================= CALLBACKS =================
-bot.on('callback_query', async q => {
+bot.on('callback_query', async (q) => {
   const id = q.message.chat.id;
-  ensureUser(id, q.from.username);
+  const data = q.data;
+  ensureUser(id, q.from.username); // make sure user exists
   const s = sessions[id] || (sessions[id] = {});
+
   await bot.answerCallbackQuery(q.id).catch(() => {});
 
-  if (q.data === 'reload') return showMainMenu(id);
-  if (q.data.startsWith('lb_')) return showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])));
+  // ================== REFRESH MAIN MENU ==================
+  if (data === 'reload') return showMainMenu(id);
 
-  if (q.data === 'store_open' && ADMIN_IDS.includes(id)) {
+  // ================== SHOP PAGINATION ==================
+  if (data.startsWith('shop_page_')) {
+    const page = Number(data.split('_')[2]);
+    bot.deleteMessage(id, q.message.message_id).catch(() => {});
+    return showShop(id, page);
+  }
+
+  // ================== BUY ROLE ==================
+  if (data.startsWith('buyrole_')) {
+    const role = data.replace('buyrole_', '');
+    const u = users[id];
+    const price = ROLE_SHOP[role]?.price;
+    if (!price) return bot.answerCallbackQuery(q.id, { text: 'Role not found!', show_alert: true });
+    if (u.xp < price) return bot.answerCallbackQuery(q.id, { text: 'Not enough XP!', show_alert: true });
+    if (u.roles.includes(role)) return bot.answerCallbackQuery(q.id, { text: 'You already own this role!', show_alert: true });
+
+    u.xp -= price;
+    u.roles.push(role);
+    saveAll();
+
+    bot.answerCallbackQuery(q.id, { text: `✅ Purchased ${role} for ${price} XP!` });
+    return showShop(id, 0);
+  }
+
+  // ================== LEADERBOARD PAGINATION ==================
+  if (data.startsWith('lb_')) {
+    const page = Math.max(0, Number(data.split('_')[1]));
+    return showLeaderboard(id, page);
+  }
+
+  // ================== STORE OPEN/CLOSE ==================
+  if (data === 'store_open' && ADMIN_IDS.includes(id)) {
     meta.storeOpen = true; saveAll(); return showMainMenu(id);
   }
-  if (q.data === 'store_close' && ADMIN_IDS.includes(id)) {
+  if (data === 'store_close' && ADMIN_IDS.includes(id)) {
     meta.storeOpen = false; saveAll(); return showMainMenu(id);
   }
 
-if (q.data.startsWith('shop_page_')) {
-  const page = Number(q.data.split('_')[2]);
-  const id = q.message.chat.id;
-  bot.deleteMessage(id, q.message.message_id).catch(() => {});
-  showShop(id, page); // show the page requested
-}
-  
-  if (q.data.startsWith('product_')) {
-    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Orders disabled.', show_alert: true });
+  // ================== PRODUCT ORDERS ==================
+  if (data.startsWith('product_')) {
+    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed!', show_alert: true });
     if (Date.now() - (s.lastClick || 0) < 30000) return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
     s.lastClick = Date.now();
 
-    // ✅ MAX 2 PENDING ORDERS
     const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
     if (pendingCount >= 2) return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
 
-    s.product = q.data.replace('product_', '');
+    s.product = data.replace('product_', '');
     s.step = 'amount';
     return sendOrEdit(id, `✏️ Send grams or $ amount for *${s.product}*`);
   }
 
-  if (q.data === 'confirm_order') {
+  // ================== CONFIRM ORDER ==================
+  if (data === 'confirm_order') {
     if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Cannot confirm order.', show_alert: true });
 
     const xp = Math.floor(2 + s.cash * 0.5);
-    const order = {
-      product: s.product,
-      grams: s.grams,
-      cash: s.cash,
-      status: 'Pending',
-      pendingXP: xp,
-      adminMsgs: []
-    };
+    const order = { product: s.product, grams: s.grams, cash: s.cash, status: 'Pending', pendingXP: xp, adminMsgs: [] };
 
     users[id].orders.push(order);
-    users[id].orders = users[id].orders.slice(-5);
+    users[id].orders = users[id].orders.slice(-5); // keep last 5 orders
     saveAll();
 
     for (const admin of ADMIN_IDS) {
-      const m = await bot.sendMessage(
-        admin,
-`🧾 *NEW ORDER*
-User: @${users[id].username || id}
-Product: ${order.product}
-Grams: ${order.grams}g
-Price: $${order.cash}
-Status: ⚪ Pending`,
+      const m = await bot.sendMessage(admin,
+        `🧾 *NEW ORDER*\nUser: @${users[id].username || id}\nProduct: ${order.product}\nGrams: ${order.grams}g\nPrice: $${order.cash}\nStatus: ⚪ Pending`,
         {
           parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [[
-              { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
-              { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
-            ]]
-          }
+          reply_markup: { inline_keyboard: [[
+            { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
+            { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
+          ]] }
         }
       );
       order.adminMsgs.push({ admin, msgId: m.message_id });
@@ -365,40 +377,26 @@ Status: ⚪ Pending`,
     return showMainMenu(id);
   }
 
-  if (q.data.startsWith('admin_')) {
-    const [, action, uid, index] = q.data.split('_');
+  // ================== ADMIN ACTIONS ==================
+  if (data.startsWith('admin_')) {
+    const [, action, uid, index] = data.split('_');
     const userId = Number(uid);
     const i = Number(index);
     const order = users[userId]?.orders[i];
     if (!order || order.status !== 'Pending') return;
 
     order.status = action === 'accept' ? '✅ Accepted' : '❌ Rejected';
-
-    if (action === 'accept') {
-      giveXP(userId, order.pendingXP);
-      delete order.pendingXP;
-      bot.sendMessage(userId, '✅ Your order has been accepted!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
-    } else {
-      bot.sendMessage(userId, '❌ Your order has been rejected!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
-      users[userId].orders = users[userId].orders.filter(o => o !== order);
-    }
-
-    const adminText = `🧾 *ORDER UPDATED*
-User: @${users[userId].username || userId}
-Product: ${order.product}
-Grams: ${order.grams}g
-Price: $${order.cash}
-Status: ${order.status}`;
+    if (action === 'accept') { giveXP(userId, order.pendingXP); delete order.pendingXP; }
+    else users[userId].orders = users[userId].orders.filter(o => o !== order);
 
     for (const { admin, msgId } of order.adminMsgs) {
-      bot.editMessageText(adminText, { chat_id: admin, message_id: msgId, parse_mode: 'Markdown' }).catch(() => {});
+      bot.editMessageText(`🧾 *ORDER UPDATED*\nUser: @${users[userId].username || userId}\nProduct: ${order.product}\nGrams: ${order.grams}g\nPrice: ${order.cash}\nStatus: ${order.status}`,
+        { chat_id: admin, message_id: msgId, parse_mode: 'Markdown' }).catch(() => {});
     }
 
     saveAll();
     return showMainMenu(userId);
   }
-
-
 });
 
 // ================= USER INPUT =================
@@ -698,9 +696,16 @@ bot.onText(/\/shop/, (msg) => {
   showShop(chatId, 0); // show the first page of the shop
 });
 
-// ================= /shop COMMAND =================
+// ================= /shop COMMAND LISTENER =================
+bot.onText(/\/shop/, (msg) => {
+  const chatId = msg.chat.id;
+  ensureUser(chatId, msg.from.username);
+  showShop(chatId, 0); // show the first page of the shop
+});
+
 const SHOP_PAGE_SIZE = 5;
 
+// Show shop page
 function showShop(chatId, page = 0) {
   const allRoles = Object.entries(ROLE_SHOP);
   const totalPages = Math.ceil(allRoles.length / SHOP_PAGE_SIZE) || 1;
@@ -713,7 +718,7 @@ function showShop(chatId, page = 0) {
 
   slice.forEach(([name, { price }], i) => {
     text += `${i + 1}. ${name} — ${price} XP\n`;
-    // Add a "Buy" button inline
+    // Buy button
     buttons.push([{ text: `💰 Buy ${name}`, callback_data: `buyrole_${name}` }]);
   });
 
