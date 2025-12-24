@@ -1,5 +1,7 @@
 // === V1LE FARM BOT (FINAL – MOBILE FRIENDLY, FULL FEATURES, 2 PENDING ORDERS) ===
 const TelegramBot = require('node-telegram-bot-api');
+// Track bot start time
+const BOT_START_TIME = Date.now();
 const fs = require('fs');
 
 const TOKEN = process.env.BOT_TOKEN;
@@ -102,7 +104,7 @@ function streakText(u) {
 
 // ================= PRODUCTS =================
 const PRODUCTS = {
-  'God Complex': { price: 10 },
+  'Jacky Ds': { price: 10 },
   'Killer Green Budz': { price: 10 }
 };
 
@@ -419,6 +421,31 @@ bot.onText(/\/activeusers/, (msg) => {
   bot.sendMessage(chatId, `📊 Active Users in last 7 days: *${activeUsers.length}*`, {
     parse_mode: 'Markdown'
   });
+});
+
+// ================= /uptime =================
+bot.onText(/\/uptime/, (msg) => {
+  const chatId = msg.chat.id;
+
+  const now = Date.now();
+  let diff = now - BOT_START_TIME;
+
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+  diff %= 24 * 60 * 60 * 1000;
+
+  const hours = Math.floor(diff / (60 * 60 * 1000));
+  diff %= 60 * 60 * 1000;
+
+  const minutes = Math.floor(diff / (60 * 1000));
+  diff %= 60 * 1000;
+
+  const seconds = Math.floor(diff / 1000);
+
+  bot.sendMessage(
+    chatId,
+    `⏱ Bot Uptime:\n${days}d ${hours}h ${minutes}m ${seconds}s`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
 // ================= /resetweekly COMMAND WITH CONFIRMATION =================
