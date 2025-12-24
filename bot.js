@@ -30,13 +30,6 @@ function spinReel() {
 // ================= FILES =================
 const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
-const SHOP_DB_FILE = 'shop.json';
-let db = fs.existsSync(SHOP_DB_FILE) ? JSON.parse(fs.readFileSync(SHOP_DB_FILE)) : {};
-
-function saveDB() {
-  fs.writeFileSync(SHOP_DB_FILE, JSON.stringify(db, null, 2));
-}
-
 const FEEDBACK_FILE = 'feedback.json';
 
 let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
@@ -78,6 +71,12 @@ function ensureUser(id, username) {
       dailyStreak: 0,
       lastSlot: 0,
       lastSpin: 0,
+   
+    cosmetics: {
+        badge: null,
+        title: null,
+        frame: null
+    }
     };
   }
   if (username) users[id].username = username;
@@ -287,57 +286,183 @@ bot.onText(/\/start|\/help/, async msg => {
 });
 
 // ================= CALLBACKS =================
-bot.on('callback_query', async (q) => {
-  const chatId = q.message.chat.id;
-  const userId = q.from.id;
-  const data = q.data;
-
+bot.on('callback_query', async q => {
+  const id = q.message.chat.id;
+  ensureUser(id, q.from.username);
+  const s = sessions[id] || (sessions[id] = {});
   await bot.answerCallbackQuery(q.id).catch(() => {});
 
-  // Make sure user session exists
-  const s = sessions[userId] || (sessions[userId] = {});
+  if (q.data === 'reload') return showMainMenu(id);
+  if (q.data.startsWith('lb_')) return showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])));
 
-  // --------- ADMIN CALLBACKS ---------
-  if (ADMIN_IDS.includes(userId)) {
-    if (data.startsWith('admin_')) {
-      return handleAdmin(q);
-    }
-    if (data === 'resetweekly_confirm') return handleResetWeeklyConfirm(q);
-    if (data === 'resetweekly_cancel') return handleResetWeeklyCancel(q);
-    if (data === 'store_open') {
-      meta.storeOpen = true;
-      saveAll();
-      return showMainMenu(userId);
-    }
-    if (data === 'store_close') {
-      meta.storeOpen = false;
-      saveAll();
-      return showMainMenu(userId);
-    }
-    if (data.startsWith('order_accept_')) return handleOrderAccept(q);
-    if (data.startsWith('order_decline_')) return handleOrderDecline(q);
+  if (q.data === 'store_open' && ADMIN_IDS.includes(id)) {
+    meta.storeOpen = true; saveAll(); return showMainMenu(id);
+  }
+  if (q.data === 'store_close' && ADMIN_IDS.includes(id)) {
+    meta.storeOpen = false; saveAll(); return showMainMenu(id);
   }
 
-  // --------- USER CALLBACKS ---------
-  if (data === 'reload') return showMainMenu(userId);
+if (q.data.startsWith('buyrole_')) {
+  const userId = q.from.id;
+  ensureUser(userId, q.from.username);
+  const u = users[userId];
 
-  if (data.startsWith('lb_')) {
-    const page = Math.max(0, Number(data.split('_')[1]));
-    return showLeaderboard(userId, page);
+  const roleName = q.data.replace('buyrole_', '');
+  const roleData = ROLE_SHOP[roleName];
+  if (!roleData) return bot.answerCallbackQuery(q.id, { text: 'Role not found!', show_alert: true });
+
+  if (u.roles.includes(roleName)) {
+    return bot.answerCallbackQuery(q.id, { text: `⚠️ You already own ${roleName}`, show_alert: true });
   }
 
-  if (data.startsWith('product_')) return handleProductOrder(q);
+  if (u.xp < roleData.price) {
+    return bot.answerCallbackQuery(q.id, { text: `❌ Not enough XP (${roleData.price} XP needed)`, show_alert: true });
+  }
 
-  if (data === 'confirm_order') return handleConfirmOrder(q);
+  u.roles.push(roleName);
+  u.xp -= roleData.price;
+  saveAll();
 
-  if (data.startsWith('buy_')) return handleShopBuy(q);
+  bot.answerCallbackQuery(q.id, { text: `✅ Purchased ${roleName}!` });
+  bot.sendMessage(userId, `🎉 You successfully bought *${roleName}* for *${roleData.price} XP*`, { parse_mode: 'Markdown' });
+}
+  
+  if (q.data.startsWith('product_')) {
+    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Orders disabled.', show_alert: true });
+    if (Date.now() - (s.lastClick || 0) < 30000) return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
+    s.lastClick = Date.now();
 
-  if (data.startsWith('shop_')) return handleShopNav(q);
+    // ✅ MAX 2 PENDING ORDERS
+    const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
+    if (pendingCount >= 2) return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
 
-  if (data.startsWith('bj_')) return handleBlackjack(q);
+    s.product = q.data.replace('product_', '');
+    s.step = 'amount';
+    return sendOrEdit(id, `✏️ Send grams or $ amount for *${s.product}*`);
+  }
 
-  // fallback
-  console.log(`Unhandled callback: ${data}`);
+  if (q.data === 'confirm_order') {
+    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Cannot confirm order.', show_alert: true });
+
+    const xp = Math.floor(2 + s.cash * 0.5);
+    const order = {
+      product: s.product,
+      grams: s.grams,
+      cash: s.cash,
+      status: 'Pending',
+      pendingXP: xp,
+      adminMsgs: []
+    };
+
+    users[id].orders.push(order);
+    users[id].orders = users[id].orders.slice(-5);
+    saveAll();
+
+    for (const admin of ADMIN_IDS) {
+      const m = await bot.sendMessage(
+        admin,
+`🧾 *NEW ORDER*
+User: @${users[id].username || id}
+Product: ${order.product}
+Grams: ${order.grams}g
+Price: $${order.cash}
+Status: ⚪ Pending`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
+              { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
+            ]]
+          }
+        }
+      );
+      order.adminMsgs.push({ admin, msgId: m.message_id });
+    }
+
+    return showMainMenu(id);
+  }
+
+  if (q.data.startsWith('admin_')) {
+    const [, action, uid, index] = q.data.split('_');
+    const userId = Number(uid);
+    const i = Number(index);
+    const order = users[userId]?.orders[i];
+    if (!order || order.status !== 'Pending') return;
+
+    order.status = action === 'accept' ? '✅ Accepted' : '❌ Rejected';
+
+    if (action === 'accept') {
+      giveXP(userId, order.pendingXP);
+      delete order.pendingXP;
+      bot.sendMessage(userId, '✅ Your order has been accepted!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
+    } else {
+      bot.sendMessage(userId, '❌ Your order has been rejected!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
+      users[userId].orders = users[userId].orders.filter(o => o !== order);
+    }
+
+    const adminText = `🧾 *ORDER UPDATED*
+User: @${users[userId].username || userId}
+Product: ${order.product}
+Grams: ${order.grams}g
+Price: $${order.cash}
+Status: ${order.status}`;
+
+    for (const { admin, msgId } of order.adminMsgs) {
+      bot.editMessageText(adminText, { chat_id: admin, message_id: msgId, parse_mode: 'Markdown' }).catch(() => {});
+    }
+
+    saveAll();
+    return showMainMenu(userId);
+  }
+
+
+});
+
+// ================= USER INPUT =================
+bot.on('message', msg => {
+  const id = msg.chat.id;
+  ensureUser(id, msg.from.username);
+
+  if (!msg.from.is_bot) setTimeout(() => bot.deleteMessage(id, msg.message_id).catch(() => {}), 2000);
+
+  const s = sessions[id];
+  if (!s || s.step !== 'amount') return;
+
+  const text = msg.text?.trim();
+  if (!text) return;
+
+  const price = PRODUCTS[s.product].price;
+  let grams, cash;
+  if (text.startsWith('$')) {
+    cash = parseFloat(text.slice(1));
+    grams = +(cash / price).toFixed(1);
+  } else {
+    grams = Math.round(parseFloat(text) * 2) / 2;
+    cash = +(grams * price).toFixed(2);
+  }
+
+  if (!grams || grams < 2) return;
+
+  s.grams = grams;
+  s.cash = cash;
+
+  sendOrEdit(
+    id,
+`🧾 *Order Summary*
+🌿 *${s.product}*
+⚖️ ${grams}g
+💲 $${cash}`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '✅ Confirm', callback_data: 'confirm_order' }],
+          [{ text: '🏠 Back to Menu', callback_data: 'reload' }]
+        ]
+      },
+      parse_mode: 'Markdown'
+    }
+  );
 });
 
 // ================= ADMIN COMMANDS =================
@@ -584,43 +709,36 @@ bot.onText(/\/userstats (.+)/, async (msg, match) => {
   bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
 });
 
-// ================= GLOBAL SHOP PAGE FUNCTION =================
-function sendShopPage(chatId, userId, page = 1) {
-  if (!db[userId]) db[userId] = { xp: users[userId]?.xp || 0, roles: [] }; // link XP to main user
-  const userData = db[userId];
+// ================= /shop COMMAND =================
+const SHOP_PAGE_SIZE = 5;
 
-  const rolesPerPage = 10;
-  const roles = Object.entries(ROLE_SHOP);
-  const totalPages = Math.ceil(roles.length / rolesPerPage);
+function showShop(chatId, page = 0) {
+  const allRoles = Object.entries(ROLE_SHOP);
+  const totalPages = Math.ceil(allRoles.length / SHOP_PAGE_SIZE) || 1;
+  page = Math.max(0, Math.min(page, totalPages - 1));
 
-  const start = (page - 1) * rolesPerPage;
-  const pageRoles = roles.slice(start, start + rolesPerPage);
+  const slice = allRoles.slice(page * SHOP_PAGE_SIZE, (page + 1) * SHOP_PAGE_SIZE);
 
-  const text = pageRoles
-    .map(([role, info], i) => `${start + i + 1}. ${role} — ${info.price} XP`)
-    .join("\n");
+  let text = `🛒 *Role Shop*\n_Page ${page + 1}/${totalPages}_\n\n`;
+  const buttons = [];
 
-  const buttons = pageRoles.map(([role]) => [
-    { text: userData.roles.includes(role) ? `${role} ✅ Owned` : `Buy ${role}`, callback_data: `buy_${role}` }
-  ]);
+  slice.forEach(([name, { price }], i) => {
+    text += `${i + 1}. ${name} — ${price} XP\n`;
+    // Add a "Buy" button inline
+    buttons.push([{ text: `💰 Buy ${name}`, callback_data: `buyrole_${name}` }]);
+  });
 
+  // Pagination buttons
   const navButtons = [];
-  if (page > 1) navButtons.push({ text: "⬅️ Prev", callback_data: `shop_${page - 1}` });
-  if (page < totalPages) navButtons.push({ text: "Next ➡️", callback_data: `shop_${page + 1}` });
+  if (page > 0) navButtons.push({ text: '⬅ Prev', callback_data: `shop_page_${page - 1}` });
+  if (page < totalPages - 1) navButtons.push({ text: '➡ Next', callback_data: `shop_page_${page + 1}` });
   if (navButtons.length) buttons.push(navButtons);
 
-  bot.sendMessage(chatId, `💼 Your XP: ${userData.xp}\n\n${text}`, {
+  bot.sendMessage(chatId, text, {
+    parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: buttons }
   });
 }
-
-// ================= /shop COMMAND =================
-bot.onText(/\/shop/, (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-  ensureUser(userId, msg.from.username);
-  sendShopPage(chatId, userId, 1); // start with page 1
-});
 
 // ================= /slots (ANIMATED + ULTRA) =================
 bot.onText(/\/slots (\d+)/, async (msg, match) => {
@@ -1112,6 +1230,7 @@ bot.onText(/\/clearfeedback/, msg => {
 
   bot.sendMessage(id, '🗑 *All feedback cleared*', { parse_mode: 'Markdown' });
 });
+
 // ================= /daily WITH STREAK =================
 bot.onText(/\/daily/, (msg) => {
   const id = msg.chat.id;
