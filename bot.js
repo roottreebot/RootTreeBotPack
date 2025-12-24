@@ -287,88 +287,6 @@ bot.onText(/\/start|\/help/, async msg => {
 });
 
 // ================= CALLBACKS =================
-bot.on('callback_query', async q => {
-  const id = q.message.chat.id;
-  ensureUser(id, q.from.username);
-  const s = sessions[id] || (sessions[id] = {});
-  await bot.answerCallbackQuery(q.id).catch(() => {});
-
-  if (q.data === 'reload') return showMainMenu(id);
-  if (q.data.startsWith('lb_')) return showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])));
-
-  if (q.data === 'store_open' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = true; saveAll(); return showMainMenu(id);
-  }
-  if (q.data === 'store_close' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = false; saveAll(); return showMainMenu(id);
-  }
-
-  if (q.data.startsWith('product_')) {
-    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Orders disabled.', show_alert: true });
-    if (Date.now() - (s.lastClick || 0) < 30000) return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
-    s.lastClick = Date.now();
-
-    // ✅ MAX 2 PENDING ORDERS
-    const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
-    if (pendingCount >= 2) return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
-
-    s.product = q.data.replace('product_', '');
-    s.step = 'amount';
-    return sendOrEdit(id, `✏️ Send grams or $ amount for *${s.product}*`);
-  }
-
-  if (q.data === 'confirm_order') {
-    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Cannot confirm order.', show_alert: true });
-
-    const xp = Math.floor(2 + s.cash * 0.5);
-    const order = {
-      product: s.product,
-      grams: s.grams,
-      cash: s.cash,
-      status: 'Pending',
-      pendingXP: xp,
-      adminMsgs: []
-    };
-
-    users[id].orders.push(order);
-    users[id].orders = users[id].orders.slice(-5);
-    saveAll();
-
-    for (const admin of ADMIN_IDS) {
-      const m = await bot.sendMessage(
-        admin,
-`🧾 *NEW ORDER*
-User: @${users[id].username || id}
-Product: ${order.product}
-Grams: ${order.grams}g
-Price: $${order.cash}
-Status: ⚪ Pending`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [[
-              { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
-              { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
-            ]]
-          }
-        }
-      );
-      order.adminMsgs.push({ admin, msgId: m.message_id });
-    }
-
-    return showMainMenu(id);
-  }
-
-  if (q.data.startsWith('admin_')) {
-    const [, action, uid, index] = q.data.split('_');
-    const userId = Number(uid);
-    const i = Number(index);
-    const order = users[userId]?.orders[i];
-    if (!order || order.status !== 'Pending') return;
-
-    order.status = action === 'accept' ? '✅ Accepted' : '❌ Rejected';
-
-    if (action === 'accept') {
 bot.on('callback_query', async (q) => {
   const chatId = q.message.chat.id;
   const userId = q.from.id;
@@ -376,272 +294,50 @@ bot.on('callback_query', async (q) => {
 
   await bot.answerCallbackQuery(q.id).catch(() => {});
 
-  // --- ADMIN ONLY CALLBACKS ---
-  if (ADMIN_IDS.includes(userId)) {
-    // Weekly reset
-    if (data === 'resetweekly_confirm') {
-      for (const u of Object.values(users)) u.weeklyXp = 0;
-      meta.weeklyReset = Date.now();
-      saveAll();
-      return bot.editMessageText('✅ Weekly XP has been reset for all users.', {
-        chat_id: chatId,
-        message_id: q.message.message_id
-      });
-    }
-
-    if (data === 'resetweekly_cancel') {
-      return bot.editMessageText('❌ Weekly XP reset canceled.', {
-        chat_id: chatId,
-        message_id: q.message.message_id
-      });
-    }
-
-    // Admin accept/reject orders
-    if (data.startsWith('admin_')) {
-      const [, action, uid, index] = data.split('_');
-      const targetId = Number(uid);
-      const i = Number(index);
-      const order = users[targetId]?.orders[i];
-      if (!order || order.status !== 'Pending') return;
-
-      order.status = action === 'accept' ? '✅ Accepted' : '❌ Rejected';
-
-      if (action === 'accept') {
-        giveXP(targetId, order.pendingXP);
-        delete order.pendingXP;
-        bot.sendMessage(targetId, '✅ Your order has been accepted!').then(msg => setTimeout(() => bot.deleteMessage(targetId, msg.message_id).catch(() => {}), 10000));
-      } else {
-        bot.sendMessage(targetId, '❌ Your order has been rejected!').then(msg => setTimeout(() => bot.deleteMessage(targetId, msg.message_id).catch(() => {}), 10000));
-        users[targetId].orders = users[targetId].orders.filter(o => o !== order);
-      }
-
-      const adminText = `🧾 *ORDER UPDATED*\nUser: @${users[targetId].username || targetId}\nProduct: ${order.product}\nGrams: ${order.grams}g\nPrice: $${order.cash}\nStatus: ${order.status}`;
-      for (const { admin, msgId } of order.adminMsgs) {
-        bot.editMessageText(adminText, { chat_id: admin, message_id: msgId, parse_mode: 'Markdown' }).catch(() => {});
-      }
-
-      saveAll();
-      return showMainMenu(targetId);
-    }
-
-    // Banlist inline navigation
-    if (data.startsWith('banlist_page_')) {
-      const page = Number(data.split('_')[2]);
-      bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-      return showBanlist(chatId, page);
-    }
-
-    // Unban button
-    if (data.startsWith('unban_')) {
-      const [_, targetId, __, page] = data.split('_');
-      if (users[targetId]) {
-        users[targetId].banned = false;
-        saveAll();
-        bot.sendMessage(chatId, `✅ User @${users[targetId].username || targetId} has been unbanned.`);
-        bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-        return showBanlist(chatId, Number(page));
-      }
-    }
-
-    // Store open/close
-    if (data === 'store_open') {
-      meta.storeOpen = true; saveAll(); return showMainMenu(userId);
-    }
-    if (data === 'store_close') {
-      meta.storeOpen = false; saveAll(); return showMainMenu(userId);
-    }
-  }
-
-  // --- USER CALLBACKS ---
+  // Make sure user session exists
   const s = sessions[userId] || (sessions[userId] = {});
 
-  // Reload menu
+  // --------- ADMIN CALLBACKS ---------
+  if (ADMIN_IDS.includes(userId)) {
+    if (data.startsWith('admin_')) {
+      return handleAdmin(q);
+    }
+    if (data === 'resetweekly_confirm') return handleResetWeeklyConfirm(q);
+    if (data === 'resetweekly_cancel') return handleResetWeeklyCancel(q);
+    if (data === 'store_open') {
+      meta.storeOpen = true;
+      saveAll();
+      return showMainMenu(userId);
+    }
+    if (data === 'store_close') {
+      meta.storeOpen = false;
+      saveAll();
+      return showMainMenu(userId);
+    }
+    if (data.startsWith('order_accept_')) return handleOrderAccept(q);
+    if (data.startsWith('order_decline_')) return handleOrderDecline(q);
+  }
+
+  // --------- USER CALLBACKS ---------
   if (data === 'reload') return showMainMenu(userId);
 
-  // Leaderboard pagination
-  if (data.startsWith('lb_')) return showMainMenu(userId, Math.max(0, Number(data.split('_')[1])));
-
-  // Product order flow
-  if (data.startsWith('product_')) {
-    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Orders disabled.', show_alert: true });
-    if (Date.now() - (s.lastClick || 0) < 30000) return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
-    s.lastClick = Date.now();
-
-    const pendingCount = users[userId].orders.filter(o => o.status === 'Pending').length;
-    if (pendingCount >= 2) return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
-
-    s.product = data.replace('product_', '');
-    s.step = 'amount';
-    return sendOrEdit(userId, `✏️ Send grams or $ amount for *${s.product}*`);
+  if (data.startsWith('lb_')) {
+    const page = Math.max(0, Number(data.split('_')[1]));
+    return showLeaderboard(userId, page);
   }
 
-  // Confirm order
-  if (data === 'confirm_order') {
-    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Cannot confirm order.', show_alert: true });
-    const xp = Math.floor(2 + s.cash * 0.5);
-    const order = {
-      product: s.product,
-      grams: s.grams,
-      cash: s.cash,
-      status: 'Pending',
-      pendingXP: xp,
-      adminMsgs: []
-    };
+  if (data.startsWith('product_')) return handleProductOrder(q);
 
-    users[userId].orders.push(order);
-    users[userId].orders = users[userId].orders.slice(-5);
-    saveAll();
+  if (data === 'confirm_order') return handleConfirmOrder(q);
 
-    for (const admin of ADMIN_IDS) {
-      const m = await bot.sendMessage(admin,
-`🧾 *NEW ORDER*\nUser: @${users[userId].username || userId}\nProduct: ${order.product}\nGrams: ${order.grams}g\nPrice: $${order.cash}\nStatus: ⚪ Pending`,
-      {
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [[
-            { text: '✅ Accept', callback_data: `admin_accept_${userId}_${users[userId].orders.length - 1}` },
-            { text: '❌ Reject', callback_data: `admin_reject_${userId}_${users[userId].orders.length - 1}` }
-          ]]
-        }
-      });
-      order.adminMsgs.push({ admin, msgId: m.message_id });
-    }
+  if (data.startsWith('buy_')) return handleShopBuy(q);
 
-    return showMainMenu(userId);
-  }
+  if (data.startsWith('shop_')) return handleShopNav(q);
 
-  // --- SHOP CALLBACKS ---
-  if (!db[userId]) db[userId] = { xp: 0, roles: [] };
-  const userData = db[userId];
+  if (data.startsWith('bj_')) return handleBlackjack(q);
 
-  if (data.startsWith("buy_")) {
-    const roleName = data.slice(4);
-    if (!ROLE_SHOP[roleName]) return;
-
-    if (userData.roles.includes(roleName)) {
-      return bot.answerCallbackQuery(q.id, { text: "❌ You already own this role!" });
-    }
-
-    const price = ROLE_SHOP[roleName].price;
-    if (userData.xp < price) return bot.answerCallbackQuery(q.id, { text: `❌ You need ${price} XP. You have ${userData.xp}.` });
-
-    userData.xp -= price;
-    userData.roles.push(roleName);
-    db[userId] = userData;
-    saveDB();
-
-    return bot.answerCallbackQuery(q.id, { text: `✅ You bought ${roleName}!` });
-  }
-
-  if (data.startsWith("shop_")) {
-    const page = parseInt(data.split("_")[1]);
-    bot.deleteMessage(chatId, q.message.message_id).catch(() => {});
-    return sendShopPage(chatId, userId, page);
-  }
-
-  // --- BLACKJACK CALLBACKS ---
-  if (bjSessions[userId]) {
-    const session = bjSessions[userId];
-    const user = users[userId];
-
-    if (data === `bj_hit_${userId}`) {
-      session.userHand.push(drawCardEmoji());
-      const total = handTotal(session.userHand);
-      if (total > 21) {
-        user.xp -= session.bet;
-        saveAll();
-        delete bjSessions[userId];
-        return bot.editMessageText(`💥 Bust!\nYour Hand: ${handString(session.userHand)} — Total: ${total}\n❌ You lost ${session.bet} XP. Current XP: ${user.xp}`, { chat_id: chatId, message_id: q.message.message_id, parse_mode:'Markdown' });
-      } else {
-        return bot.editMessageText(`Your Hand: ${handString(session.userHand)} — Total: ${total}\nDealer's Hand: ${handString(session.dealerHand,true)}\n\nBet: ${session.bet} XP`, {
-          chat_id: chatId, message_id: q.message.message_id, parse_mode:'Markdown',
-          reply_markup:{ inline_keyboard:[
-            [
-              { text:'🃏 Hit', callback_data:`bj_hit_${userId}` },
-              { text:'✋ Stand', callback_data:`bj_stand_${userId}` },
-              { text:'💥 Double Down', callback_data:`bj_double_${userId}` }
-            ]
-          ]}
-        });
-      }
-    }
-
-    if (data === `bj_double_${userId}`) {
-      if (session.doubled) return;
-      if(user.xp < session.bet*2) return bot.answerCallbackQuery(q.id,{text:'❌ Not enough XP to double down!', show_alert:true});
-      session.bet *= 2;
-      session.doubled = true;
-      session.userHand.push(drawCardEmoji());
-      const total = handTotal(session.userHand);
-      if(total>21){
-        user.xp -= session.bet;
-        saveAll();
-        delete bjSessions[userId];
-        return bot.editMessageText(`💥 Bust after Double Down!\nYour Hand: ${handString(session.userHand)} — Total: ${total}\n❌ You lost ${session.bet} XP. Current XP: ${user.xp}`, { chat_id: chatId, message_id: q.message.message_id, parse_mode:'Markdown' });
-      } else {
-        return data = `bj_stand_${userId}`;
-      }
-    }
-
-    if (data === `bj_stand_${userId}`) {
-      let dealerTotal = handTotal(session.dealerHand);
-      while(dealerTotal<17){ session.dealerHand.push(drawCardEmoji()); dealerTotal = handTotal(session.dealerHand); }
-      const userTotal = handTotal(session.userHand);
-      let result = `🃏 *Blackjack Result*\n\nYour Hand: ${handString(session.userHand)} — Total: ${userTotal}\nDealer's Hand: ${handString(session.dealerHand)} — Total: ${dealerTotal}\n\n`;
-      if(dealerTotal>21 || userTotal>dealerTotal){ user.xp += session.bet; result += `🎉 You win! Gained ${session.bet} XP.\nCurrent XP: ${user.xp}`; }
-      else if(userTotal===dealerTotal) result += `⚖️ Draw! Bet returned. Current XP: ${user.xp}`;
-      else{ user.xp -= session.bet; result += `💸 You lost ${session.bet} XP.\nCurrent XP: ${user.xp}`; }
-      saveAll();
-      delete bjSessions[userId];
-      return bot.editMessageText(result,{ chat_id: chatId, message_id:q.message.message_id, parse_mode:'Markdown' });
-    }
-  }
-});
-
-// ================= USER INPUT =================
-bot.on('message', msg => {
-  const id = msg.chat.id;
-  ensureUser(id, msg.from.username);
-
-  if (!msg.from.is_bot) setTimeout(() => bot.deleteMessage(id, msg.message_id).catch(() => {}), 2000);
-
-  const s = sessions[id];
-  if (!s || s.step !== 'amount') return;
-
-  const text = msg.text?.trim();
-  if (!text) return;
-
-  const price = PRODUCTS[s.product].price;
-  let grams, cash;
-  if (text.startsWith('$')) {
-    cash = parseFloat(text.slice(1));
-    grams = +(cash / price).toFixed(1);
-  } else {
-    grams = Math.round(parseFloat(text) * 2) / 2;
-    cash = +(grams * price).toFixed(2);
-  }
-
-  if (!grams || grams < 2) return;
-
-  s.grams = grams;
-  s.cash = cash;
-
-  sendOrEdit(
-    id,
-`🧾 *Order Summary*
-🌿 *${s.product}*
-⚖️ ${grams}g
-💲 $${cash}`,
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '✅ Confirm', callback_data: 'confirm_order' }],
-          [{ text: '🏠 Back to Menu', callback_data: 'reload' }]
-        ]
-      },
-      parse_mode: 'Markdown'
-    }
-  );
+  // fallback
+  console.log(`Unhandled callback: ${data}`);
 });
 
 // ================= ADMIN COMMANDS =================
