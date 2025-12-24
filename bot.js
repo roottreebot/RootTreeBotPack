@@ -285,14 +285,39 @@ bot.onText(/\/start|\/help/, async msg => {
   await showMainMenu(msg.chat.id, 0);
 });
 
-// ================= CALLBACKS =================
+// ================= CALLBACK =================
 bot.on('callback_query', async (q) => {
   const id = q.message.chat.id;
   const data = q.data;
   ensureUser(id, q.from.username); // make sure user exists
   const s = sessions[id] || (sessions[id] = {});
+  const u = users[id];
 
   await bot.answerCallbackQuery(q.id).catch(() => {});
+
+  // ================== CHANGE ROLE ==================
+  if (data === 'change_role') {
+    // Build list of roles user can buy or assign
+    const availableRoles = Object.keys(ROLE_SHOP).map(r => [{ text: `${r} ($${ROLE_SHOP[r].price})`, callback_data: `role_${r}` }]);
+    return bot.editMessageText('🎭 Select a role to change:', { 
+      chat_id: id, 
+      message_id: q.message.message_id, 
+      reply_markup: { inline_keyboard: availableRoles } 
+    });
+  }
+
+  if (data.startsWith('role_')) {
+    const role = data.replace('role_', '');
+    if (!ROLE_SHOP[role]) return bot.answerCallbackQuery(q.id, { text: '❌ Invalid role', show_alert: true });
+
+    if (!u.roles.includes(role)) {
+      u.roles.push(role);
+      saveAll();
+      return bot.editMessageText(`✅ Your new role: *${role}*`, { chat_id: id, message_id: q.message.message_id, parse_mode: 'Markdown' });
+    } else {
+      return bot.answerCallbackQuery(q.id, { text: '❌ You already have this role', show_alert: true });
+    }
+  }
 
   // ================== REFRESH MAIN MENU ==================
   if (data === 'reload') return showMainMenu(id);
@@ -307,7 +332,6 @@ bot.on('callback_query', async (q) => {
   // ================== BUY ROLE ==================
   if (data.startsWith('buyrole_')) {
     const role = data.replace('buyrole_', '');
-    const u = users[id];
     const price = ROLE_SHOP[role]?.price;
     if (!price) return bot.answerCallbackQuery(q.id, { text: 'Role not found!', show_alert: true });
     if (u.xp < price) return bot.answerCallbackQuery(q.id, { text: 'Not enough XP!', show_alert: true });
@@ -341,7 +365,7 @@ bot.on('callback_query', async (q) => {
     if (Date.now() - (s.lastClick || 0) < 30000) return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
     s.lastClick = Date.now();
 
-    const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
+    const pendingCount = u.orders.filter(o => o.status === 'Pending').length;
     if (pendingCount >= 2) return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
 
     s.product = data.replace('product_', '');
@@ -356,18 +380,18 @@ bot.on('callback_query', async (q) => {
     const xp = Math.floor(2 + s.cash * 0.5);
     const order = { product: s.product, grams: s.grams, cash: s.cash, status: 'Pending', pendingXP: xp, adminMsgs: [] };
 
-    users[id].orders.push(order);
-    users[id].orders = users[id].orders.slice(-5); // keep last 5 orders
+    u.orders.push(order);
+    u.orders = u.orders.slice(-5); // keep last 5 orders
     saveAll();
 
     for (const admin of ADMIN_IDS) {
       const m = await bot.sendMessage(admin,
-        `🧾 *NEW ORDER*\nUser: @${users[id].username || id}\nProduct: ${order.product}\nGrams: ${order.grams}g\nPrice: $${order.cash}\nStatus: ⚪ Pending`,
+        `🧾 *NEW ORDER*\nUser: @${u.username || id}\nProduct: ${order.product}\nGrams: ${order.grams}g\nPrice: $${order.cash}\nStatus: ⚪ Pending`,
         {
           parse_mode: 'Markdown',
           reply_markup: { inline_keyboard: [[
-            { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
-            { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
+            { text: '✅ Accept', callback_data: `admin_accept_${id}_${u.orders.length - 1}` },
+            { text: '❌ Reject', callback_data: `admin_reject_${id}_${u.orders.length - 1}` }
           ]] }
         }
       );
