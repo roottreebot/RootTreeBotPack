@@ -28,6 +28,7 @@ function spinReel() {
 // ================= FILES =================
 const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
+const FEEDBACK_FILE = 'feedback.json';
 
 let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
 let meta = fs.existsSync(META_FILE)
@@ -37,6 +38,17 @@ let meta = fs.existsSync(META_FILE)
 function saveAll() {
   fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
   fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2));
+}
+
+let feedback = fs.existsSync(FEEDBACK_FILE)
+  ? JSON.parse(fs.readFileSync(FEEDBACK_FILE))
+  : [];
+
+// ================= SAVE DB =================
+function saveAll() {
+  fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
+  fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2));
+  fs.writeFileSync(FEEDBACK_FILE, JSON.stringify(feedback, null, 2));
 }
 
 // ================= USERS =================
@@ -1041,6 +1053,96 @@ bot.onText(/\/clear(?:\s+(\d+))?/, async (msg, match) => {
   );
 });
 
+// ================= /feedback  =================
+bot.onText(/^\/feedback(?:\s+([\s\S]+))?$/i, (msg, match) => {
+  const id = msg.chat.id;
+  ensureUser(id, msg.from.username);
+
+  const text = match[1]?.trim();
+  if (!text || text.length < 5) {
+    return bot.sendMessage(id, '❌ Usage:\n/feedback <at least 5 characters>');
+  }
+
+  feedback.push({
+    id: Date.now(),
+    userId: id,
+    username: users[id].username || '',
+    text,
+    date: Date.now()
+  });
+
+  saveAll();
+
+  bot.sendMessage(id, '✅ *Feedback received!* Thanks for helping improve the bot.', {
+    parse_mode: 'Markdown'
+  });
+});
+
+// ================= /userfeedback =================
+const FEEDBACK_PAGE_SIZE = 5;
+
+function showFeedback(chatId, page = 0, filterUser = null) {
+  let list = [...feedback].reverse();
+
+  if (filterUser) {
+    list = list.filter(f =>
+      f.username?.toLowerCase() === filterUser.toLowerCase() ||
+      String(f.userId) === filterUser
+    );
+  }
+
+  const totalPages = Math.ceil(list.length / FEEDBACK_PAGE_SIZE) || 1;
+  page = Math.max(0, Math.min(page, totalPages - 1));
+
+  if (!list.length) {
+    return bot.sendMessage(chatId, '📭 No feedback found.');
+  }
+
+  const slice = list.slice(
+    page * FEEDBACK_PAGE_SIZE,
+    (page + 1) * FEEDBACK_PAGE_SIZE
+  );
+
+  let text = `📬 *User Feedback*\n_Page ${page + 1}/${totalPages}_\n\n`;
+
+  slice.forEach(f => {
+    text +=
+`👤 @${f.username || 'unknown'} (\`${f.userId}\`)
+💬 ${f.text}
+🕒 ${new Date(f.date).toLocaleString()}
+
+`;
+  });
+
+  const buttons = [];
+  if (page > 0) buttons.push({ text: '⬅ Prev', callback_data: `fb_${page - 1}_${filterUser || ''}` });
+  if (page < totalPages - 1) buttons.push({ text: '➡ Next', callback_data: `fb_${page + 1}_${filterUser || ''}` });
+
+  bot.sendMessage(chatId, text, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: buttons.length ? [buttons] : [] }
+  });
+}
+
+// ================= /userfeedback handler =================
+bot.onText(/\/userfeedback(?:\s+@?(\w+))?/, (msg, match) => {
+  const chatId = msg.chat.id;
+  if (!ADMIN_IDS.includes(chatId)) return;
+
+  const filter = match[1] || null;
+  showFeedback(chatId, 0, filter);
+});
+
+// ================= /clearfeedback =================
+bot.onText(/\/clearfeedback/, msg => {
+  const id = msg.chat.id;
+  if (!ADMIN_IDS.includes(id)) return;
+
+  feedback = [];
+  saveAll();
+
+  bot.sendMessage(id, '🗑 *All feedback cleared*', { parse_mode: 'Markdown' });
+});
 // ================= /daily WITH STREAK =================
 bot.onText(/\/daily/, (msg) => {
   const id = msg.chat.id;
