@@ -678,91 +678,81 @@ bot.onText(/\/userstats (.+)/, async (msg, match) => {
   bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
 });
 
-// ================= /shop COMMAND =================
-const SHOP_PAGE_SIZE = 5;
-
-function showShop(chatId, page = 0) {
-  const allRoles = Object.entries(ROLE_SHOP);
-  const totalPages = Math.ceil(allRoles.length / SHOP_PAGE_SIZE) || 1;
-  page = Math.max(0, Math.min(page, totalPages - 1));
-
-  const slice = allRoles.slice(page * SHOP_PAGE_SIZE, (page + 1) * SHOP_PAGE_SIZE);
-
-  let text = `🛒 *Role Shop*\n_Page ${page + 1}/${totalPages}_\n\n`;
-  slice.forEach(([name, { price }], i) => {
-    text += `${i + 1}. ${name} — ${price} XP\n`;
-  });
-
-  const buttons = [];
-  if (page > 0) buttons.push({ text: '⬅ Prev', callback_data: `shop_page_${page - 1}` });
-  if (page < totalPages - 1) buttons.push({ text: '➡ Next', callback_data: `shop_page_${page + 1}` });
-
-  bot.sendMessage(chatId, text, {
-    parse_mode: 'Markdown',
-    reply_markup: { inline_keyboard: buttons.length ? [buttons] : [] }
-  });
-}
-
-// Command
-bot.onText(/\/shop/, (msg) => {
-  showShop(msg.chat.id, 0);
-});
-
-// Pagination handler
-bot.on('callback_query', async q => {
-  const data = q.data;
-  if (!data.startsWith('shop_page_')) return;
-  const page = Number(data.split('_')[2]);
-  bot.deleteMessage(q.message.chat.id, q.message.message_id).catch(() => {});
-  showShop(q.message.chat.id, page);
-});
-
-// ================= /buy COMMAND (SMART MATCHING) =================
-bot.onText(/\/buy (.+)/, async (msg, match) => {
+// ================= SHOP COMMAND =================
+bot.onText(/\/shop/, async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
-  const input = match[1].trim();
 
-  // Get user's current balance and roles
-  const userData = db[userId] || { balance: 0, roles: [] }; // Adjust based on your db structure
+  // Ensure user exists
+  if (!db[userId]) db[userId] = { xp: 0, roles: [] };
+  const userData = db[userId];
 
-  // Find rank by exact name (case-insensitive)
-  const rankName = Object.keys(ROLE_SHOP).find(
-    r => r.toLowerCase() === input.toLowerCase()
-  );
+  const rolesPerPage = 10;
+  const roles = Object.entries(ROLE_SHOP);
+  const totalPages = Math.ceil(roles.length / rolesPerPage);
 
-  if (!rankName) {
-    // If rank not found, show full list
-    let reply = "💼 Available Ranks:\n\n";
-    let i = 1;
-    for (const [role, info] of Object.entries(ROLE_SHOP)) {
-      reply += `${i}. ${role} — ${info.price} coins\n`;
-      i++;
+  let page = 1; // default first page
+  sendShopPage(chatId, userId, page);
+
+  function sendShopPage(chatId, userId, page) {
+    const start = (page - 1) * rolesPerPage;
+    const pageRoles = roles.slice(start, start + rolesPerPage);
+
+    const text = pageRoles
+      .map(([role, info], i) => `${start + i + 1}. ${role} — ${info.price} XP`)
+      .join("\n");
+
+    const buttons = pageRoles.map(([role]) => [
+      { text: `Buy ${role}`, callback_data: `buy_${role}` },
+    ]);
+
+    const navButtons = [];
+    if (page > 1) navButtons.push({ text: "⬅️ Prev", callback_data: `shop_${page - 1}` });
+    if (page < totalPages) navButtons.push({ text: "Next ➡️", callback_data: `shop_${page + 1}` });
+    if (navButtons.length) buttons.push(navButtons);
+
+    bot.sendMessage(chatId, `💼 Your XP: ${userData.xp}\n\n${text}`, {
+      reply_markup: { inline_keyboard: buttons },
+    });
+  }
+});
+
+// ================= CALLBACK HANDLER =================
+bot.on("callback_query", async (query) => {
+  const chatId = query.message.chat.id;
+  const userId = query.from.id;
+  const data = query.data;
+
+  if (!db[userId]) db[userId] = { xp: 0, roles: [] };
+  const userData = db[userId];
+
+  if (data.startsWith("buy_")) {
+    const roleName = data.slice(4);
+
+    if (!ROLE_SHOP[roleName]) return;
+
+    if (userData.roles.includes(roleName)) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ You already own this role!" });
     }
-    reply += `\nUse /buy <rank name> to purchase.`;
-    return bot.sendMessage(chatId, reply);
+
+    const price = ROLE_SHOP[roleName].price;
+    if (userData.xp < price) {
+      return bot.answerCallbackQuery(query.id, { text: `❌ You need ${price} XP. You have ${userData.xp}.` });
+    }
+
+    userData.xp -= price;
+    userData.roles.push(roleName);
+    db[userId] = userData;
+    saveDB();
+
+    return bot.answerCallbackQuery(query.id, { text: `✅ You bought ${roleName}!` });
   }
 
-  // Check if user already has this rank
-  if (userData.roles.includes(rankName)) {
-    return bot.sendMessage(chatId, `❌ You already own **${rankName}**!`);
+  if (data.startsWith("shop_")) {
+    const page = parseInt(data.split("_")[1]);
+    bot.deleteMessage(chatId, query.message.message_id);
+    sendShopPage(chatId, userId, page);
   }
-
-  const price = ROLE_SHOP[rankName].price;
-
-  if (userData.balance < price) {
-    return bot.sendMessage(chatId, `❌ You need ${price} coins to buy **${rankName}**. You have ${userData.balance} coins.`);
-  }
-
-  // Deduct balance and assign role
-  userData.balance -= price;
-  userData.roles.push(rankName);
-
-  // Save back to db
-  db[userId] = userData;
-  saveDB(); // Make sure you have a function to save your db
-
-  bot.sendMessage(chatId, `✅ You bought **${rankName}** for ${price} coins!`);
 });
 
 // ================= /slots (ANIMATED + ULTRA) =================
