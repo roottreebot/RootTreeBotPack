@@ -27,6 +27,14 @@ function spinReel() {
   return SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
 }
 
+// ======== SHOP ITEMS ========
+const SHOP_ITEMS = {
+  "Golden Crown": { price: 50, type: 'badge', description: "A shiny crown for your profile" },
+  "Silver Star": { price: 30, type: 'badge', description: "A silver star for your profile" },
+  "Diamond Rank": { price: 100, type: 'rank', description: "Special rank shown in main menu" },
+  "Elite Rank": { price: 70, type: 'rank', description: "Elite role for main menu" }
+};
+
 // ================= FILES =================
 const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
@@ -73,6 +81,10 @@ function ensureUser(id, username) {
     };
   }
   if (username) users[id].username = username;
+  // inside ensureUser(id, username)
+if (!users[id].badges) users[id].badges = [];         // list of unlocked badges
+if (!users[id].selectedBadge) users[id].selectedBadge = ''; // currently equipped badge
+if (!users[id].rank) users[id].rank = '';             // currently equipped rank
 }
 
 // ================= XP =================
@@ -206,19 +218,22 @@ async function showMainMenu(id, lbPage = 0) {
 
   const storeStatus = meta.storeOpen ? '🟢 Store Open' : '🔴 Store Closed';
 
-  await sendOrEdit(
-    id,
+  const badgeText = u.selectedBadge ? `🏅 Badge: ${u.selectedBadge}` : '';
+const rankText = u.rank ? `🎖 Rank: ${u.rank}` : '';
+
+await sendOrEdit(
+  id,
 `${storeStatus}
 🎚 Level: *${u.level}*
 📊 XP: ${xpBar(u.xp, u.level)}
 ${streakText(u)}
+${badgeText} ${rankText}
 📦 *Your Orders* (last 5)
 ${orders}
 
 ${lb.text}`,
-    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
-  );
-}
+  { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
+);
 
 // ================= START =================
 bot.onText(/\/start|\/help/, msg => showMainMenu(msg.chat.id, 0));
@@ -329,7 +344,8 @@ Status: ${order.status}`;
     return showMainMenu(userId);
   }
 
-  
+  // ======== HANDLE SHOP PURCHASES ========
+bo
 });
 
 // ================= USER INPUT =================
@@ -376,6 +392,63 @@ bot.on('message', msg => {
       parse_mode: 'Markdown'
     }
   );
+});
+
+// ======== HANDLE SHOP PURCHASES ========
+bot.on('callback_query', (q) => {
+  const id = q.message.chat.id;
+  ensureUser(id, q.from.username);
+  const u = users[id];
+  const data = q.data;
+
+  if (!data.startsWith('buy_')) return;
+
+  const itemKey = data.replace('buy_', '').replace(/_/g,' ');
+  const item = SHOP_ITEMS[itemKey];
+  if (!item) return bot.answerCallbackQuery(q.id, { text: '❌ Item not found', show_alert: true });
+
+  // If already owned
+  if ((item.type === 'badge' && u.badges.includes(itemKey)) || (item.type === 'rank' && u.rank === itemKey)) {
+    return bot.answerCallbackQuery(q.id, { text: `✅ Already equipped!`, show_alert: true });
+  }
+
+  // Purchase
+  if (u.xp >= item.price && !(item.type === 'badge' && u.badges.includes(itemKey))) {
+    u.xp -= item.price;
+    if (item.type === 'badge') {
+      u.badges.push(itemKey);
+      u.selectedBadge = itemKey; // auto equip
+      bot.answerCallbackQuery(q.id, { text: `🎉 Purchased & equipped ${itemKey}`, show_alert: true });
+    }
+    if (item.type === 'rank') {
+      u.rank = itemKey; // auto equip
+      bot.answerCallbackQuery(q.id, { text: `🎉 Purchased & equipped ${itemKey}`, show_alert: true });
+    }
+  } else if (item.type === 'badge' && u.badges.includes(itemKey)) {
+    // equip badge
+    u.selectedBadge = itemKey;
+    bot.answerCallbackQuery(q.id, { text: `🎨 Equipped ${itemKey}`, show_alert: true });
+  } else if (item.type === 'rank' && u.rank !== itemKey) {
+    u.rank = itemKey;
+    bot.answerCallbackQuery(q.id, { text: `🏆 Equipped ${itemKey}`, show_alert: true });
+  } else {
+    return bot.answerCallbackQuery(q.id, { text: `❌ Not enough XP!`, show_alert: true });
+  }
+
+  saveAll();
+
+  // Refresh shop
+  let kb = Object.keys(SHOP_ITEMS).map(item => {
+    const owned = (u.badges.includes(item) || u.rank === item) ? '✅' : '';
+    return [{ text: `${item} — ${SHOP_ITEMS[item].price} XP ${owned}`, callback_data: `buy_${item.replace(/ /g,'_')}` }];
+  });
+
+  bot.editMessageText(`🛒 *Shop*\nYour XP: *${u.xp}*\n\nSelect an item to purchase or equip:`, {
+    chat_id: id,
+    message_id: q.message.message_id,
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: kb }
+  });
 });
 
 // ================= ADMIN COMMANDS =================
@@ -827,6 +900,24 @@ bot.onText(/\/profile/, async (msg) => {
 
   // Fallback if no photo or error
   bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
+});
+
+// ======== /shop COMMAND ========
+bot.onText(/\/shop/, (msg) => {
+  const id = msg.chat.id;
+  ensureUser(id, msg.from.username);
+  const u = users[id];
+
+  // Build inline keyboard
+  let kb = Object.keys(SHOP_ITEMS).map(item => {
+    const owned = (u.badges.includes(item) || u.rank === item) ? '✅' : '';
+    return [{ text: `${item} — ${SHOP_ITEMS[item].price} XP ${owned}`, callback_data: `buy_${item.replace(/ /g,'_')}` }];
+  });
+
+  bot.sendMessage(id, `🛒 *Shop*\nYour XP: *${u.xp}*\n\nSelect an item to purchase or equip:`, {
+    parse_mode: 'Markdown',
+    reply_markup: { inline_keyboard: kb }
+  });
 });
 
 // ================= BLACKJACK WITH XP AS CURRENCY =================
