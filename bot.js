@@ -116,7 +116,7 @@ const PRODUCTS = {
   'Killer Green Budz': { price: 10 }
 };
 
-// ================= ROLES SHOP =================
+// ================= ROLE SHOP =================
 const ROLE_SHOP = {
   "🌟 Novice": { price: 50 },
   "🌀 Initiate": { price: 50 },
@@ -128,7 +128,7 @@ const ROLE_SHOP = {
   "🚀 Legendary": { price: 1200 },
   "🛡️ Elite": { price: 1700 },
   "⚔️ Champion": { price: 2300 },
-  "🏆 Mythic": { price: 3000 }
+  "🏆 Mythic": { price: 3000 },  // <-- added comma
   "🔥 Spark": { price: 120 },
   "💠 Shard": { price: 180 },
   "⚡ Bolt": { price: 260 },
@@ -147,7 +147,7 @@ const ROLE_SHOP = {
   "🚀 Voyager": { price: 4000 },
   "🛡️ Sentinel": { price: 4700 },
   "⚔️ Conqueror": { price: 5500 },
-  "🏆 Immortal": { price: 6500 },
+  "🏆 Immortal": { price: 6500 }
 };
 
 // ================= HELPER FUNCTIONS =================
