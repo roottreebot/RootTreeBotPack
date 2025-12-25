@@ -16,6 +16,35 @@ if (!TOKEN || !ADMIN_IDS.length) {
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
+// ===== GLOBAL STATE =====
+const users = {};
+const sessions = {};
+const lastMessages = {}; // 👈 REQUIRED
+
+async function sendOrEdit(chatId, text, options = {}) {
+  if (!lastMessages[chatId]) {
+    const m = await bot.sendMessage(chatId, text, options);
+    lastMessages[chatId] = m.message_id;
+  } else {
+    bot.editMessageText(text, {
+      chat_id: chatId,
+      message_id: lastMessages[chatId],
+      ...options
+    }).catch(() => {});
+  }
+}
+
+// commands
+bot.onText(/\/shop/, ...);
+bot.onText(/\/start/, ...);
+
+// callback_query
+bot.on('callback_query', ...);
+
+// other functions
+function showShop(...) { ... }
+function showMainMenu(...) { ... }
+
 // ================= SLOTS CONFIG =================
 const SLOT_COOLDOWN = 10 * 1000; // 10s
 const SLOT_SYMBOLS = ['🍒', '🍋', '🍊', '🍉', '⭐'];
@@ -717,17 +746,16 @@ function showShop(chatId, page = 0) {
 
   slice.forEach(([name, { price }], i) => {
     text += `${i + 1}. ${name} — ${price} XP\n`;
-    // Buy button
     buttons.push([{ text: `💰 Buy ${name}`, callback_data: `buyrole_${name}` }]);
   });
 
-  // Pagination buttons
   const navButtons = [];
   if (page > 0) navButtons.push({ text: '⬅ Prev', callback_data: `shop_page_${page - 1}` });
   if (page < totalPages - 1) navButtons.push({ text: '➡ Next', callback_data: `shop_page_${page + 1}` });
   if (navButtons.length) buttons.push(navButtons);
 
-  bot.sendMessage(chatId, text, {
+  // ✅ THIS LINE FIXES DEAD BUTTONS
+  sendOrEdit(chatId, text, {
     parse_mode: 'Markdown',
     reply_markup: { inline_keyboard: buttons }
   });
