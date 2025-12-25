@@ -735,17 +735,18 @@ bot.onText(/\/buy (.+)/i, (msg, match) => {
 
   const inputRaw = match[1].trim().toLowerCase();
 
+  // Normalize string: lowercase, remove spaces/punctuation but keep letters, numbers, emoji
   const normalize = s =>
     s
       .trim()
       .toLowerCase()
-      .replace(/[^a-z0-9\u00C0-\u017F⚡️⚔️]/g, '');
+      .replace(/[^a-z0-9\u00C0-\u017F⚡️⚔️]/g, ''); 
 
   const input = normalize(inputRaw);
 
   let candidates = [];
 
-  // Collect roles
+  // 🔍 Collect all roles
   for (const [name, data] of Object.entries(ROLE_SHOP)) {
     candidates.push({
       type: 'role',
@@ -755,7 +756,7 @@ bot.onText(/\/buy (.+)/i, (msg, match) => {
     });
   }
 
-  // Collect cosmetics
+  // 🔍 Collect all cosmetics
   for (const type of Object.keys(COSMETIC_STORE)) {
     for (const [name, data] of Object.entries(COSMETIC_STORE[type])) {
       candidates.push({
@@ -768,19 +769,16 @@ bot.onText(/\/buy (.+)/i, (msg, match) => {
     }
   }
 
-  // Compute similarity
-  const scored = candidates.map(c => ({
-    ...c,
-    similarity: stringSimilarity.compareTwoStrings(c.normName, input)
-  }));
+  // 🔍 Compute similarity
+  const matches = candidates
+    .map(c => ({
+      ...c,
+      similarity: stringSimilarity.compareTwoStrings(c.normName, input)
+    }))
+    .filter(c => c.similarity > 0.3) // keep reasonably similar
+    .sort((a, b) => b.similarity - a.similarity);
 
-  const maxSim = Math.max(...scored.map(c => c.similarity));
-  const topMatches = scored
-    .filter(c => c.similarity > 0.3)
-    .sort((a, b) => b.similarity - a.similarity)
-    .slice(0, 3); // top 3
-
-  if (topMatches.length === 0) {
+  if (matches.length === 0) {
     return bot.sendMessage(
       chatId,
       `❌ Could not find anything matching:\n*${match[1]}*\n\nUse /shop to see available items.`,
@@ -788,42 +786,21 @@ bot.onText(/\/buy (.+)/i, (msg, match) => {
     );
   }
 
-  if (topMatches.length === 1 && topMatches[0].similarity === 1) {
-    // exact match, buy automatically
-    buyItem(u, chatId, topMatches[0]);
-  } else {
-    // Suggest inline buttons
-    const buttons = topMatches.map(item => ({
-      text: `${item.name} (${item.price} XP)`,
-      callback_data: `buy_${userId}_${encodeURIComponent(JSON.stringify(item))}`
-    }));
-
-    bot.sendMessage(chatId, `🤔 Did you mean:`, {
-      reply_markup: { inline_keyboard: [buttons] }
+  if (matches.length > 1 && matches[0].similarity !== matches[1].similarity) {
+    // take the best match
+    matches.splice(1);
+  } else if (matches.length > 5) {
+    // too many close matches, ask for specificity
+    let text = `🤔 *Multiple items found*\n\n`;
+    matches.slice(0, 5).forEach(m => {
+      text += `• ${m.name} (${m.type}) — *${m.price} XP*\n`;
     });
+    text += `\nPlease type a more specific name.`;
+    return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
   }
-});
 
-// Callback handler for inline button purchase
-bot.on('callback_query', q => {
-  const data = q.data;
+  const item = matches[0];
 
-  if (!data.startsWith('buy_')) return;
-
-  const [_, uid, itemJson] = data.split('_');
-  const userId = parseInt(uid);
-  const item = JSON.parse(decodeURIComponent(itemJson));
-
-  if (!users[userId]) return;
-
-  const u = users[userId];
-  const chatId = q.message.chat.id;
-
-  buyItem(u, chatId, item);
-  bot.answerCallbackQuery(q.id); // remove "loading" state
-});
-
-function buyItem(u, chatId, item) {
   if (u.xp < item.price) {
     return bot.sendMessage(
       chatId,
@@ -856,8 +833,7 @@ function buyItem(u, chatId, item) {
     `✅ *Purchase successful!*\n\nYou bought *${item.name}* for *${item.price} XP*.`,
     { parse_mode: 'Markdown' }
   );
-}
-
+});
 
 // ================= /slots (ANIMATED + ULTRA) =================
 bot.onText(/\/slots (\d+)/, async (msg, match) => {
