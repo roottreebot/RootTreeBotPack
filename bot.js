@@ -252,7 +252,6 @@ async function showMainMenu(id, lbPage = 0) {
 
   const kb = [
     ...Object.keys(PRODUCTS).map(p => [{ text: `🪴 ${p}`, callback_data: `product_${p}` }]),
-    [{ text: '🔄 Reload Menu', callback_data: 'reload' }]
   ];
 
   if (ADMIN_IDS.includes(id)) {
