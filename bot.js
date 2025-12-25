@@ -77,13 +77,15 @@ function ensureUser(id, username) {
       dailyStreak: 0,
       lastSlot: 0,
       lastSpin: 0,
-   
-      // 🔒 Force admin role if ID is admin
-  if (ADMIN_IDS.includes(id)) {
-    users[id].role = ADMIN_ROLE;
     };
   }
   if (username) users[id].username = username;
+}
+
+// 🔒 Force admin role if ID is admin
+  if (ADMIN_IDS.includes(id)) {
+    users[id].role = ADMIN_ROLE;
+  }
 }
 
 // ================= XP =================
