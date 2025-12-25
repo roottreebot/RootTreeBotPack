@@ -723,9 +723,7 @@ bot.on('callback_query', async q => {
   showShop(q.message.chat.id, page);
 });
 
-// ================= /buy COMMAND (SMART MATCHING + EMOJI SUPPORT) =================
-const stringSimilarity = require('string-similarity'); // npm install string-similarity
-
+// ================= /buy COMMAND (SMART MATCHING) =================
 bot.onText(/\/buy (.+)/i, (msg, match) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
@@ -735,49 +733,40 @@ bot.onText(/\/buy (.+)/i, (msg, match) => {
 
   const inputRaw = match[1].trim().toLowerCase();
 
-  // Normalize string: lowercase, remove spaces/punctuation but keep letters, numbers, emoji
   const normalize = s =>
-    s
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9\u00C0-\u017F⚡️⚔️]/g, ''); 
+    s.toLowerCase()
+     .replace(/[^a-z0-9]/g, '');
 
   const input = normalize(inputRaw);
 
-  let candidates = [];
+  let matches = [];
 
-  // 🔍 Collect all roles
+  // 🔍 Search roles
   for (const [name, data] of Object.entries(ROLE_SHOP)) {
-    candidates.push({
-      type: 'role',
-      name: name.trim(),
-      price: data.price,
-      normName: normalize(name)
-    });
-  }
-
-  // 🔍 Collect all cosmetics
-  for (const type of Object.keys(COSMETIC_STORE)) {
-    for (const [name, data] of Object.entries(COSMETIC_STORE[type])) {
-      candidates.push({
-        type: 'cosmetic',
-        cosmeticType: type,
+    if (normalize(name).includes(input)) {
+      matches.push({
+        type: 'role',
         name,
-        price: data.price,
-        normName: normalize(name)
+        price: data.price
       });
     }
   }
 
-  // 🔍 Compute similarity
-  const matches = candidates
-    .map(c => ({
-      ...c,
-      similarity: stringSimilarity.compareTwoStrings(c.normName, input)
-    }))
-    .filter(c => c.similarity > 0.3) // keep reasonably similar
-    .sort((a, b) => b.similarity - a.similarity);
+  // 🔍 Search cosmetics
+  for (const type of Object.keys(COSMETIC_STORE)) {
+    for (const [name, data] of Object.entries(COSMETIC_STORE[type])) {
+      if (normalize(name).includes(input)) {
+        matches.push({
+          type: 'cosmetic',
+          cosmeticType: type,
+          name,
+          price: data.price
+        });
+      }
+    }
+  }
 
+  // ❌ Nothing found
   if (matches.length === 0) {
     return bot.sendMessage(
       chatId,
@@ -786,19 +775,18 @@ bot.onText(/\/buy (.+)/i, (msg, match) => {
     );
   }
 
-  if (matches.length > 1 && matches[0].similarity !== matches[1].similarity) {
-    // take the best match
-    matches.splice(1);
-  } else if (matches.length > 5) {
-    // too many close matches, ask for specificity
+  // ⚠️ Multiple matches → suggest
+  if (matches.length > 1) {
     let text = `🤔 *Multiple items found*\n\n`;
-    matches.slice(0, 5).forEach(m => {
+    for (const m of matches) {
       text += `• ${m.name} (${m.type}) — *${m.price} XP*\n`;
-    });
+    }
     text += `\nPlease type a more specific name.`;
+
     return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
   }
 
+  // ✅ Single match
   const item = matches[0];
 
   if (u.xp < item.price) {
@@ -809,19 +797,23 @@ bot.onText(/\/buy (.+)/i, (msg, match) => {
     );
   }
 
+  // 🧾 Already owned?
   if (item.type === 'role') {
     if (u.roles.includes(item.name)) {
       return bot.sendMessage(chatId, `⚠️ You already own *${item.name}*.`);
     }
+
     u.roles.push(item.name);
   }
 
   if (item.type === 'cosmetic') {
     u.cosmetics ||= {};
     u.cosmetics[item.cosmeticType] ||= [];
+
     if (u.cosmetics[item.cosmeticType].includes(item.name)) {
       return bot.sendMessage(chatId, `⚠️ You already own *${item.name}*.`);
     }
+
     u.cosmetics[item.cosmeticType].push(item.name);
   }
 
