@@ -14,13 +14,13 @@ if (!TOKEN || !ADMIN_IDS.length) {
   process.exit(1);
 }
 
+const bot = new TelegramBot(TOKEN, { polling: true });
+
 const ADMIN_ROLE = '👑 ADMIN';
 
 const ADMIN_IDS = process.env.ADMIN_IDS
   ? process.env.ADMIN_IDS.split(',').map(id => Number(id.trim()))
   : [];
-
-const bot = new TelegramBot(TOKEN, { polling: true });
 
 // ================= SLOTS CONFIG =================
 const SLOT_COOLDOWN = 10 * 1000; // 10s
