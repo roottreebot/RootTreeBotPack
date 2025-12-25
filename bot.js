@@ -118,7 +118,7 @@ const PRODUCTS = {
 
 // ================= ROLE SHOP =================
 const ROLE_SHOP = {
-  "🌟 Novice": { price: 50 },
+  "🌟 Novice": { price: 20 },
   "🌀 Initiate": { price: 50 },
   "🔥 Apprentice": { price: 100 },
   "💎 Adept": { price: 200 },
