@@ -676,11 +676,6 @@ bot.onText(/\/userprofile(?:\s+(.+))?/i, async (msg, match) => {
 
 🎭 Roles: ${roles}
 
-🎨 Cosmetics
-• 🏷️ Badge: *${badge}*
-• 📝 Title: *${title}*
-• 🖼️ Frame: *${frame}*
-
 📦 Orders: *${u.orders?.length || 0}*
 🚫 Banned: *${u.banned ? 'Yes' : 'No'}*
 `;
