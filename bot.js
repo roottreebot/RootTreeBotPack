@@ -16,24 +16,6 @@ if (!TOKEN || !ADMIN_IDS.length) {
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// ===== GLOBAL STATE =====
-const users = {};
-const sessions = {};
-const lastMessages = {}; // 👈 REQUIRED
-
-async function sendOrEdit(chatId, text, options = {}) {
-  if (!lastMessages[chatId]) {
-    const m = await bot.sendMessage(chatId, text, options);
-    lastMessages[chatId] = m.message_id;
-  } else {
-    bot.editMessageText(text, {
-      chat_id: chatId,
-      message_id: lastMessages[chatId],
-      ...options
-    }).catch(() => {});
-  }
-}
-
 // commands
 bot.onText(/\/shop/, ...);
 bot.onText(/\/start/, ...);
@@ -61,15 +43,15 @@ const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
 const FEEDBACK_FILE = 'feedback.json';
 
-let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
+let users = fs.existsSync(DB_FILE)
+  ? JSON.parse(fs.readFileSync(DB_FILE))
+  : {};
+
+const sessions = {};
+
 let meta = fs.existsSync(META_FILE)
   ? JSON.parse(fs.readFileSync(META_FILE))
   : { weeklyReset: Date.now(), storeOpen: true };
-
-function saveAll() {
-  fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
-  fs.writeFileSync(META_FILE, JSON.stringify(meta, null, 2));
-}
 
 let feedback = fs.existsSync(FEEDBACK_FILE)
   ? JSON.parse(fs.readFileSync(FEEDBACK_FILE))
@@ -314,124 +296,159 @@ bot.onText(/\/start|\/help/, async msg => {
 
 // ================= CALLBACK =================
 bot.on('callback_query', async (q) => {
-  const id = q.message.chat.id;
+  const chatId = q.message.chat.id;
+  const id = q.from.id;
   const data = q.data;
+
   ensureUser(id, q.from.username);
-  const s = sessions[id] || (sessions[id] = {});
   const u = users[id];
+  const s = sessions[id] || (sessions[id] = {});
 
   await bot.answerCallbackQuery(q.id).catch(() => {});
 
-  // ================== SHOP PAGINATION ==================
-if (data.startsWith('shop_page_')) {
-  const page = Number(data.split('_')[2]);
-  return showShop(id, page);
-}
+  // ================= RELOAD MAIN MENU =================
+  if (data === 'reload') {
+    return showMainMenu(id, 0);
+  }
 
-// ================== BUY ROLE ==================
-if (data.startsWith('buyrole_')) {
-  const role = data.replace('buyrole_', '');
-  const roleData = ROLE_SHOP[role];
+  // ================= SHOP PAGINATION =================
+  if (data.startsWith('shop_page_')) {
+    const page = Number(data.split('_')[2]);
+    return showShop(id, page);
+  }
 
-  if (!roleData)
-    return bot.answerCallbackQuery(q.id, { text: 'Role not found!', show_alert: true });
+  // ================= BUY ROLE =================
+  if (data.startsWith('buyrole_')) {
+    const role = data.replace('buyrole_', '');
+    const roleData = ROLE_SHOP[role];
 
-  if (u.roles.includes(role))
-    return bot.answerCallbackQuery(q.id, { text: 'You already own this role!', show_alert: true });
+    if (!roleData)
+      return bot.answerCallbackQuery(q.id, { text: '❌ Role not found', show_alert: true });
 
-  if (u.xp < roleData.price)
-    return bot.answerCallbackQuery(q.id, { text: 'Not enough XP!', show_alert: true });
+    if (u.roles.includes(role))
+      return bot.answerCallbackQuery(q.id, { text: '⚠️ You already own this role', show_alert: true });
 
-  u.xp -= roleData.price;
-  u.roles.push(role);
-  saveAll();
+    if (u.xp < roleData.price)
+      return bot.answerCallbackQuery(q.id, { text: '❌ Not enough XP', show_alert: true });
 
-  bot.answerCallbackQuery(q.id, { text: `✅ Purchased ${role}!` });
-  return showShop(id, 0);
-}
+    u.xp -= roleData.price;
+    u.roles.push(role);
+    saveAll();
 
-  // ================== LEADERBOARD PAGINATION ==================
+    bot.answerCallbackQuery(q.id, { text: `✅ Purchased ${role}` });
+    return showShop(id, 0);
+  }
+
+  // ================= LEADERBOARD PAGINATION =================
   if (data.startsWith('lb_')) {
-    const page = Math.max(0, Number(data.split('_')[1]));
-    return showLeaderboard(id, page, q.message.message_id);
+    const page = Number(data.split('_')[1]);
+    return showMainMenu(id, page);
   }
 
-  // ================== WEEKLY LEADERBOARD ==================
-  if (data.startsWith('weekly_')) {
-    const page = Math.max(0, Number(data.split('_')[1]));
-    return showWeekly(id, page, q.message.message_id);
-  }
-
-  // ================== STORE OPEN/CLOSE ==================
+  // ================= STORE OPEN / CLOSE =================
   if (data === 'store_open' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = true; saveAll(); return showMainMenu(id, q.message.message_id);
+    meta.storeOpen = true;
+    saveAll();
+    return showMainMenu(id, 0);
   }
+
   if (data === 'store_close' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = false; saveAll(); return showMainMenu(id, q.message.message_id);
+    meta.storeOpen = false;
+    saveAll();
+    return showMainMenu(id, 0);
   }
 
-  // ================== PRODUCT ORDERS ==================
+  // ================= PRODUCT SELECT =================
   if (data.startsWith('product_')) {
-    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed!', show_alert: true });
-    if (Date.now() - (s.lastClick || 0) < 30000) return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
+    if (!meta.storeOpen)
+      return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed', show_alert: true });
+
+    if (Date.now() - (s.lastClick || 0) < 30000)
+      return bot.answerCallbackQuery(q.id, { text: '⏳ Please wait before ordering again', show_alert: true });
+
+    const pending = u.orders.filter(o => o.status === 'Pending').length;
+    if (pending >= 2)
+      return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders', show_alert: true });
+
     s.lastClick = Date.now();
-
-    const pendingCount = u.orders.filter(o => o.status === 'Pending').length;
-    if (pendingCount >= 2) return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
-
     s.product = data.replace('product_', '');
     s.step = 'amount';
-    return sendOrEdit(id, `✏️ Send grams or $ amount for *${s.product}*`, { message_id: q.message.message_id, parse_mode: 'Markdown' });
+
+    return sendOrEdit(id, `✏️ Send grams or $ amount for *${s.product}*`, { parse_mode: 'Markdown' });
   }
 
-  // ================== CONFIRM ORDER ==================
+  // ================= CONFIRM ORDER =================
   if (data === 'confirm_order') {
-    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Cannot confirm order.', show_alert: true });
+    if (!meta.storeOpen)
+      return bot.answerCallbackQuery(q.id, { text: 'Store closed', show_alert: true });
 
     const xp = Math.floor(2 + s.cash * 0.5);
-    const order = { product: s.product, grams: s.grams, cash: s.cash, status: 'Pending', pendingXP: xp, adminMsgs: [] };
+    const order = {
+      product: s.product,
+      grams: s.grams,
+      cash: s.cash,
+      status: 'Pending',
+      pendingXP: xp,
+      adminMsgs: []
+    };
 
     u.orders.push(order);
-    u.orders = u.orders.slice(-5); // keep last 5 orders
+    u.orders = u.orders.slice(-5);
     saveAll();
 
     for (const admin of ADMIN_IDS) {
-      const m = await bot.sendMessage(admin,
+      const m = await bot.sendMessage(
+        admin,
         `🧾 *NEW ORDER*\nUser: @${u.username || id}\nProduct: ${order.product}\nGrams: ${order.grams}g\nPrice: $${order.cash}\nStatus: ⚪ Pending`,
         {
           parse_mode: 'Markdown',
-          reply_markup: { inline_keyboard: [[
-            { text: '✅ Accept', callback_data: `admin_accept_${id}_${u.orders.length - 1}` },
-            { text: '❌ Reject', callback_data: `admin_reject_${id}_${u.orders.length - 1}` }
-          ]] }
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '✅ Accept', callback_data: `admin_accept_${id}_${u.orders.length - 1}` },
+              { text: '❌ Reject', callback_data: `admin_reject_${id}_${u.orders.length - 1}` }
+            ]]
+          }
         }
       );
       order.adminMsgs.push({ admin, msgId: m.message_id });
     }
 
-    return showMainMenu(id, q.message.message_id);
+    return showMainMenu(id, 0);
   }
 
-  // ================== ADMIN ACTIONS ==================
+  // ================= ADMIN ACCEPT / REJECT =================
   if (data.startsWith('admin_')) {
     const [, action, uid, index] = data.split('_');
     const userId = Number(uid);
     const i = Number(index);
-    const order = users[userId]?.orders[i];
-    if (!order || order.status !== 'Pending') return;
 
-    order.status = action === 'accept' ? '✅ Accepted' : '❌ Rejected';
-    if (action === 'accept') { giveXP(userId, order.pendingXP); delete order.pendingXP; }
-    else users[userId].orders = users[userId].orders.filter(o => o !== order);
+    const target = users[userId];
+    if (!target || !target.orders[i]) return;
+
+    const order = target.orders[i];
+    if (order.status !== 'Pending') return;
+
+    if (action === 'accept') {
+      order.status = '✅ Accepted';
+      giveXP(userId, order.pendingXP);
+      delete order.pendingXP;
+    } else {
+      order.status = '❌ Rejected';
+      target.orders = target.orders.filter(o => o !== order);
+    }
 
     for (const { admin, msgId } of order.adminMsgs) {
-      bot.editMessageText(`🧾 *ORDER UPDATED*\nUser: @${users[userId].username || userId}\nProduct: ${order.product}\nGrams: ${order.grams}g\nPrice: ${order.cash}\nStatus: ${order.status}`,
-        { chat_id: admin, message_id: msgId, parse_mode: 'Markdown' }).catch(() => {});
+      bot.editMessageText(
+        `🧾 *ORDER UPDATED*\nUser: @${target.username || userId}\nProduct: ${order.product}\nGrams: ${order.grams}g\nPrice: $${order.cash}\nStatus: ${order.status}`,
+        { chat_id: admin, message_id: msgId, parse_mode: 'Markdown' }
+      ).catch(() => {});
     }
 
     saveAll();
-    return showMainMenu(userId, q.message.message_id);
+    return showMainMenu(userId, 0);
   }
+
+  console.log('Unhandled callback:', data);
 });
   
 // ================= USER INPUT =================
