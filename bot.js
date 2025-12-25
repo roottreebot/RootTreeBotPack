@@ -621,52 +621,69 @@ ${comparison}`;
   }
 });
 
-// ================= ADMIN /userstats =================
-bot.onText(/\/userstats (.+)/, async (msg, match) => {
+// ================= /USERPROFILE COMMAND =================
+bot.onText(/\/userprofile(?:\s+(.+))?/i, async (msg, match) => {
   const chatId = msg.chat.id;
-  const adminId = msg.from.id;
 
-  // Admin only
-  if (!ADMIN_IDS.includes(adminId)) {
-    return bot.sendMessage(chatId, '❌ Admin only command.');
-  }
+  let targetId;
+  let targetUsername;
 
-  const input = match[1].replace('@', '').trim();
-  let targetId = null;
-
-  // Find user by ID
-  if (!isNaN(input)) {
-    targetId = Number(input);
+  // If no argument → show own profile
+  if (!match[1]) {
+    targetId = msg.from.id;
+    targetUsername = msg.from.username;
   } else {
-    // Find user by username
-    const found = Object.values(users).find(
-      u => u.username && u.username.toLowerCase() === input.toLowerCase()
-    );
-    if (found) targetId = found.id;
+    // Must be a reply or @username
+    if (msg.reply_to_message) {
+      targetId = msg.reply_to_message.from.id;
+      targetUsername = msg.reply_to_message.from.username;
+    } else if (match[1].startsWith('@')) {
+      targetUsername = match[1].replace('@', '').toLowerCase();
+
+      // Find user by username in DB
+      const found = Object.entries(users).find(
+        ([, u]) => u.username?.toLowerCase() === targetUsername
+      );
+
+      if (!found) {
+        return bot.sendMessage(chatId, '❌ User not found in database.');
+      }
+
+      targetId = Number(found[0]);
+    } else {
+      return bot.sendMessage(chatId, '❌ Use `/userprofile @username` or reply to a user.', {
+        parse_mode: 'Markdown'
+      });
+    }
   }
 
-  if (!targetId || !users[targetId]) {
-    return bot.sendMessage(chatId, '❌ User not found in database.');
-  }
-
+  ensureUser(targetId, targetUsername);
   const u = users[targetId];
+
   const roles = u.roles?.length ? u.roles.join(', ') : '_No roles owned yet_';
-  const highestRole = getHighestRole(u);
+
+  const badge = u.cosmetics?.badge || 'None';
+  const title = u.cosmetics?.title || 'None';
+  const frame = u.cosmetics?.frame || 'None';
 
   const profileText = `
 👤 *User Profile*
 
-🆔 ID: \`${u.id}\`
+🆔 ID: \`${targetId}\`
 👑 Level: *${u.level}*
 📊 XP: ${xpBar(u.xp, u.level)}
 📅 Weekly XP: *${u.weeklyXp}*
 
-👑 Highest Role: *${highestRole}*
-📛 Roles: *${roles}*
+🎭 Roles: ${roles}
+
+🎨 Cosmetics
+• 🏷️ Badge: *${badge}*
+• 📝 Title: *${title}*
+• 🖼️ Frame: *${frame}*
 
 📦 Orders: *${u.orders?.length || 0}*
 🚫 Banned: *${u.banned ? 'Yes' : 'No'}*
-  `;
+`;
 
   try {
     const photos = await bot.getUserProfilePhotos(targetId, { limit: 1 });
@@ -679,8 +696,11 @@ bot.onText(/\/userstats (.+)/, async (msg, match) => {
         parse_mode: 'Markdown'
       });
     }
-  } catch (err) {}
+  } catch (err) {
+    console.error('User profile photo fetch failed:', err.message);
+  }
 
+  // Fallback if no photo
   bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
 });
 
