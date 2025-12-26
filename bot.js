@@ -127,7 +127,7 @@ const ROLE_SHOP = {
   "🫩 Sesh": { price: 750 },
   "👴 Junky": { price: 800 },
   "🍃 420": { price: 950 },
-  "🚀 Legendary": { price: 1200 },
+  "🚀 LegendaryHit": { price: 1200 },
   "🥱 Lazy": { price: 1200 },
   "👤 Dealer": { price: 1500 },
   "👼 StonedForLife": { price: 1700 },
