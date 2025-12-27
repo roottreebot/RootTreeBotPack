@@ -1,3 +1,9 @@
 {
-  "weeklyReset": 1700000000000
+  "weeklyReset": 1700000000000,
+  "storeOpen": true,
+  "lottery": {
+    "active": false,
+    "role": null,
+    "entries": []
+  }
 }
