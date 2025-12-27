@@ -526,50 +526,6 @@ bot.onText(/\/activeusers/, (msg) => {
   });
 });
 
-// ================= /resetdaily =================
-bot.onText(/\/resetdaily (@\w+)/, async (msg, match) => {
-  const adminId = msg.chat.id;
-  if (!ADMIN_IDS.includes(adminId)) return bot.sendMessage(adminId, '❌ You are not authorized.');
-
-  const username = match[1].replace('@', '');
-
-  // Find user by username
-  const userId = Object.keys(users).find(id => users[id].username === username);
-  if (!userId) return bot.sendMessage(adminId, `❌ User @${username} not found.`);
-
-  ensureUser(userId, username);
-
-  // Reset daily XP / leaderboard
-  users[userId].dailyXP = 0; // Change key if your leaderboard uses another name
-  saveAll();
-
-  // Notify admin
-  bot.sendMessage(adminId, `✅ Reset daily XP for @${username}.`);
-
-  // Flashy animation for the user
-  const emojis = ['✨', '🎉', '💫', '🌟', '🎁', '🔥', '🚀', '🍀'];
-  let displayMsg = await bot.sendMessage(userId, '✨ Resetting your daily XP...');
-  for (let i = 0; i < 8; i++) {
-    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
-    await bot.editMessageText(`${randomEmoji} Resetting your daily XP... ${randomEmoji}`, {
-      chat_id: userId,
-      message_id: displayMsg.message_id
-    });
-    await new Promise(res => setTimeout(res, 150));
-  }
-
-  // Final message
-  await bot.editMessageText('⚠️ Your daily XP has been reset by an admin.', {
-    chat_id: userId,
-    message_id: displayMsg.message_id
-  });
-
-  // Auto-delete after 7 seconds
-  setTimeout(() => {
-    bot.deleteMessage(userId, displayMsg.message_id).catch(() => {});
-  }, 7000);
-});
-
 // ================= /uptime =================
 bot.onText(/\/uptime/, (msg) => {
   const chatId = msg.chat.id;
@@ -596,21 +552,45 @@ bot.onText(/\/uptime/, (msg) => {
 });
 
 // ================= /resetweekly COMMAND WITH CONFIRMATION =================
-bot.onText(/\/resetweekly/, async (msg) => {
-  const chatId = msg.chat.id;
-  if (!ADMIN_IDS.includes(chatId)) return;
+bot.onText(/\/resetweekly (@\w+)/, async (msg, match) => {
+  const adminId = msg.chat.id;
+  if (!ADMIN_IDS.includes(adminId)) return bot.sendMessage(adminId, '❌ You are not authorized.');
 
-  const sentMsg = await bot.sendMessage(chatId, '⚠️ Are you sure you want to reset *weekly XP* for all users?', {
-    parse_mode: 'Markdown',
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: '✅ Confirm', callback_data: 'resetweekly_confirm' },
-          { text: '❌ Cancel', callback_data: 'resetweekly_cancel' }
-        ]
-      ]
-    }
+  const username = match[1].replace('@', '').toLowerCase();
+
+  // Find user by username
+  const userId = Object.keys(users).find(id => users[id].username?.toLowerCase() === username);
+  if (!userId) return bot.sendMessage(adminId, `❌ User @${username} not found.`);
+
+  ensureUser(userId, users[userId].username);
+
+  // RESET leaderboard XP (weeklyXp in your bot)
+  users[userId].weeklyXp = 0;
+  saveAll();
+
+  // Notify admin
+  bot.sendMessage(adminId, `✅ Reset weekly leaderboard XP for @${username}.`);
+
+  // Flashy animation for the user
+  const emojis = ['✨', '🎉', '💫', '🌟', '🎁', '🍀', '🔥', '🚀'];
+  let display = await bot.sendMessage(userId, '✨ Resetting your weekly leaderboard XP...');
+  for (let i = 0; i < 10; i++) {
+    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+    await bot.editMessageText(`${randomEmoji} Resetting... ${randomEmoji}`, {
+      chat_id: userId,
+      message_id: display.message_id
+    });
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  await bot.editMessageText('⚠️ Your weekly leaderboard XP has been reset by an admin.', {
+    chat_id: userId,
+    message_id: display.message_id
   });
+
+  setTimeout(() => {
+    bot.deleteMessage(userId, display.message_id).catch(() => {});
+  }, 8000);
 });
 
 // ================= INLINE BUTTON HANDLER FOR /resetweekly =================
