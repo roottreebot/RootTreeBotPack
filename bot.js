@@ -1055,7 +1055,7 @@ bot.onText(/\/adminhelp/, async (msg) => {
 
 📢 /broadcast <msg> — Message All Users
 
-🔄 /resetweekly — Reset Weekly Stats
+🔄 /resetweekly @user — Reset Weekly XP
 👥 /activeusers — Show Active Users
 
 🍀 /makelottery <role> — Make A Lottery
