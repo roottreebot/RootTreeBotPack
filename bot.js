@@ -101,7 +101,7 @@ function streakText(u) {
   if (!u || !u.dailyStreak || u.dailyStreak < 1) {
     return '🔥 Daily Streak: 0 ';
   }
-  return `🔥 /Daily *Streak*: ${u.dailyStreak} day${u.dailyStreak === 1 ? '' : 's'}`;
+  return `🔥 /daily *Streak*: ${u.dailyStreak} day${u.dailyStreak === 1 ? '' : 's'}`;
 }
 
 // ================= PRODUCTS =================
