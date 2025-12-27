@@ -1038,6 +1038,8 @@ bot.onText(/\/adminhelp/, async (msg) => {
 🎰 /drawlottery — Draw The Lottery
 💬 /userfeedback — View Feedback
 🧹 /clearfeedback — Clear Feedback
+❌️ /removerole @user <rolename> — Remove Users Role
+🎁 /reward @user <e.g. 10, level, XP, rolename> — Reward A User Something
 
 ⏱ /uptime — Bot Uptime
 🗑 /clearpending — Clear ALL Pending Orders
