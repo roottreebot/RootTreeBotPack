@@ -526,6 +526,50 @@ bot.onText(/\/activeusers/, (msg) => {
   });
 });
 
+// ================= /resetdaily =================
+bot.onText(/\/resetdaily (@\w+)/, async (msg, match) => {
+  const adminId = msg.chat.id;
+  if (!ADMIN_IDS.includes(adminId)) return bot.sendMessage(adminId, '❌ You are not authorized.');
+
+  const username = match[1].replace('@', '');
+
+  // Find user by username
+  const userId = Object.keys(users).find(id => users[id].username === username);
+  if (!userId) return bot.sendMessage(adminId, `❌ User @${username} not found.`);
+
+  ensureUser(userId, username);
+
+  // Reset daily XP / leaderboard
+  users[userId].dailyXP = 0; // Change key if your leaderboard uses another name
+  saveAll();
+
+  // Notify admin
+  bot.sendMessage(adminId, `✅ Reset daily XP for @${username}.`);
+
+  // Flashy animation for the user
+  const emojis = ['✨', '🎉', '💫', '🌟', '🎁', '🔥', '🚀', '🍀'];
+  let displayMsg = await bot.sendMessage(userId, '✨ Resetting your daily XP...');
+  for (let i = 0; i < 8; i++) {
+    const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+    await bot.editMessageText(`${randomEmoji} Resetting your daily XP... ${randomEmoji}`, {
+      chat_id: userId,
+      message_id: displayMsg.message_id
+    });
+    await new Promise(res => setTimeout(res, 150));
+  }
+
+  // Final message
+  await bot.editMessageText('⚠️ Your daily XP has been reset by an admin.', {
+    chat_id: userId,
+    message_id: displayMsg.message_id
+  });
+
+  // Auto-delete after 7 seconds
+  setTimeout(() => {
+    bot.deleteMessage(userId, displayMsg.message_id).catch(() => {});
+  }, 7000);
+});
+
 // ================= /uptime =================
 bot.onText(/\/uptime/, (msg) => {
   const chatId = msg.chat.id;
