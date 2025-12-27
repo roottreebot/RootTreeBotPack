@@ -882,20 +882,21 @@ bot.onText(/\/userhelp/, async (msg) => {
 
 🏅 /rank — View your rank & XP
 
-🃏 /blackjack (10) — Play blackjack (10 XP)
-🎰 /slots (10) — Play slots (10 XP)
-🎡 /spin — Spin the wheel
+🍀 /lottery — Enter Free Lottery & Possibly Win A Role
+🃏 /blackjack (10) — Play Blackjack (10 XP)
+🎰 /slots (10) — Play Slots (10 XP)
+🎡 /spin — Spin The Daily Wheel
 
-🎁 /daily — Claim daily reward
+🎁 /daily — Claim daily Reward
 
-🧹 /clear — Clear your messages / session
+🧹 /clear — Clear Your Messages / session 42H
 
-💬 /feedback <text> — Send feedback to admins
+💬 /feedback <text> — Send Feedback To Admins
 
-🧾 /userprofile — View your profile
+🧾 /userprofile — View Your Profile
 
-🛒 /shop — View shop
-🛍 /buy — Buy from shop
+🛒 /shop — View Role Shop
+🛍 /buy — Buy From Role Shop
 `;
 
   const sent = await bot.sendMessage(id, text, { parse_mode: 'Markdown' });
@@ -918,23 +919,25 @@ bot.onText(/\/adminhelp/, async (msg) => {
   const text = `
 🏆 *ADMIN COMMANDS*
 
-📦 /exportdb — Export database
-📥 /importdb — Import database
+📦 /exportdb — Export Database
+📥 /importdb — Import Database
 
-🚫 /ban @user — Ban a user
-✅ /unban @user — Unban a user
-📋 /banlist — View banned users
+🚫 /ban @user — Ban A User
+✅ /unban @user — Unban A User
+📋 /banlist — View Banned Users
 
-📢 /broadcast <msg> — Message all users
+📢 /broadcast <msg> — Message All Users
 
-🔄 /resetweekly — Reset weekly stats
-👥 /activeusers — Show active users
+🔄 /resetweekly — Reset Weekly Stats
+👥 /activeusers — Show Active Users
 
-💬 /userfeedback — View feedback
-🧹 /clearfeedback — Clear feedback
+🍀 /makelottery <role> — Make A Lottery
+🎰 /drawlottery — Draw The Lottery
+💬 /userfeedback — View Feedback
+🧹 /clearfeedback — Clear Feedback
 
-⏱ /uptime — Bot uptime
-🗑 /clearpending — Clear ALL pending orders
+⏱ /uptime — Bot Uptime
+🗑 /clearpending — Clear ALL Pending Orders
 `;
 
   const sent = await bot.sendMessage(id, text, { parse_mode: 'Markdown' });
