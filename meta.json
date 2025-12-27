@@ -5,5 +5,14 @@
     "active": false,
     "role": null,
     "entries": []
-  }
+  },
+  "dailyCooldown": {},
+  "feedback": [],
+  "broadcasts": [],
+  "stats": {
+    "activeUsers": 0,
+    "totalOrders": 0
+  },
+  "roles": {},
+  "metaVersion": 1
 }
