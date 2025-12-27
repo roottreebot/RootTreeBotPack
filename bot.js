@@ -679,6 +679,82 @@ ${comparison}`;
   }
 });
 
+// ================= /reward =================
+bot.onText(/\/reward (@\w+)\s+(.+)/, async (msg, match) => {
+  const adminId = msg.chat.id;
+  if (!ADMIN_IDS.includes(adminId)) return bot.sendMessage(adminId, '❌ You are not authorized.');
+
+  const username = match[1].replace('@', '');
+  const rewardInput = match[2].trim();
+
+  // Find user by username
+  const userId = Object.keys(users).find(id => users[id].username === username);
+  if (!userId) return bot.sendMessage(adminId, `❌ User @${username} not found.`);
+
+  ensureUser(userId, username);
+
+  let adminMessage = '';
+  let userMessage = '';
+
+  // Check if reward is XP
+  const xpMatch = rewardInput.match(/^(\d+)\s*xp$/i);
+  if (xpMatch) {
+    const xpAmount = parseInt(xpMatch[1]);
+    users[userId].xp = (users[userId].xp || 0) + xpAmount;
+    adminMessage = `✅ Gave @${username} ${xpAmount} XP.`;
+    userMessage = `🎉 You received ${xpAmount} XP from the admin!`;
+  }
+  // Check if reward is Level
+  else if (rewardInput.match(/^(\d+)\s*level$/i)) {
+    const levelAmount = parseInt(rewardInput.match(/^(\d+)\s*level$/i)[1]);
+    users[userId].level = (users[userId].level || 0) + levelAmount;
+    adminMessage = `✅ Gave @${username} ${levelAmount} level(s).`;
+    userMessage = `🎉 You received ${levelAmount} level(s) from the admin!`;
+  }
+  // Otherwise, assume reward is a role
+  else {
+    const role = rewardInput;
+    users[userId].roles = users[userId].roles || [];
+    if (!users[userId].roles.includes(role)) {
+      users[userId].roles.push(role);
+      adminMessage = `✅ Gave @${username} the role: ${role}`;
+      userMessage = `🎉 You received a new role: ${role}!`;
+    } else {
+      adminMessage = `ℹ️ User @${username} already has the role: ${role}`;
+      userMessage = '';
+    }
+  }
+
+  saveAll();
+
+  // Notify admin
+  bot.sendMessage(adminId, adminMessage);
+
+  // Flashy animation for user
+  if (userMessage) {
+    const emojis = ['🎉', '✨', '💫', '🌟', '🎁', '🍀', '🚀', '🔥'];
+    let displayMsg = await bot.sendMessage(userId, '✨ Receiving your reward...');
+    for (let i = 0; i < 8; i++) {
+      const randomEmoji = emojis[Math.floor(Math.random() * emojis.length)];
+      await bot.editMessageText(`${randomEmoji} Receiving your reward... ${randomEmoji}`, {
+        chat_id: userId,
+        message_id: displayMsg.message_id
+      });
+      await new Promise(res => setTimeout(res, 150));
+    }
+    // Final message
+    await bot.editMessageText(userMessage, {
+      chat_id: userId,
+      message_id: displayMsg.message_id
+    });
+
+    // Auto-delete after 7 seconds
+    setTimeout(() => {
+      bot.deleteMessage(userId, displayMsg.message_id).catch(() => {});
+    }, 7000);
+  }
+});
+
 // ================= /USERPROFILE COMMAND =================
 bot.onText(/\/userprofile(?:\s+(.+))?/i, async (msg, match) => {
   const chatId = msg.chat.id;
