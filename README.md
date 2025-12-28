@@ -13,4 +13,6 @@ bash -c "$(curl -s https://raw.githubusercontent.com/roottreebot/V1LEFarmBotPack
 - install_bot.sh — installer
 - bootstrap.sh — initial bootstrap
 - package.json — Node.js dependencies
+- user.json - users
 - .gitignore — ignored files
+_ meta.json - meta
