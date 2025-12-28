@@ -33,15 +33,23 @@ function spinReel() {
   return SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
 }
 
-// ================= CASH TRACKING =================
-if (typeof meta.totalCash !== 'number') {
-  meta.totalCash = 0;
-}
-
 // ================= FILES =================
 const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
 const FEEDBACK_FILE = 'feedback.json';
+
+let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
+let meta = fs.existsSync(META_FILE)
+  ? JSON.parse(fs.readFileSync(META_FILE))
+  : { weeklyReset: Date.now(), storeOpen: true };
+
+if (!meta.lottery) {
+  meta.lottery = {
+    active: false,
+    role: null,
+    entries: []
+  };
+}
 
 function saveAll() {
   fs.writeFileSync(DB_FILE, JSON.stringify(users, null, 2));
@@ -455,12 +463,8 @@ Status: ⚪ Pending`,
     order.status = action === 'accept' ? '✅ Accepted' : '❌ Rejected';
 
     if (action === 'accept') {
-  giveXP(userId, order.pendingXP);
-  delete order.pendingXP;
-
-  // 💰 Add to total cash
-  meta.totalCash += Number(order.cash) || 0;
-      
+      giveXP(userId, order.pendingXP);
+      delete order.pendingXP;
       bot.sendMessage(userId, '✅ Your order has been accepted!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
     } else {
       bot.sendMessage(userId, '❌ Your order has been rejected!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
@@ -1403,35 +1407,6 @@ ${result}
       parse_mode: 'Markdown'
     }
   );
-});
-
-// ================= /totalcash =================
-bot.onText(/\/totalcash/, (msg) => {
-  const id = msg.chat.id;
-
-  if (!ADMIN_IDS.includes(id)) {
-    return bot.sendMessage(id, '❌ You are not authorized.');
-  }
-
-  bot.sendMessage(
-    id,
-    `💰 *Total Cash Made*\n\n$${meta.totalCash.toLocaleString()}`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-// ================= /clearcash =================
-bot.onText(/\/clearcash/, (msg) => {
-  const id = msg.chat.id;
-
-  if (!ADMIN_IDS.includes(id)) {
-    return bot.sendMessage(id, '❌ You are not authorized.');
-  }
-
-  meta.totalCash = 0;
-  saveAll();
-
-  bot.sendMessage(id, '♻️ Total cash counter has been reset.');
 });
 
 // ================= BLACKJACK WITH XP AS CURRENCY =================
