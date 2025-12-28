@@ -716,7 +716,7 @@ bot.onText(/\/removerole (@\w+)\s+(.+)/, (msg, match) => {
 });
 
 // ================= /rank COMMAND (with XP bars) =================
-bot.onText(/\/rank(?:\s+@?(\w+))?/, (msg, match) => {
+bot.onText(/\/rank(?:\s+@?(\w+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const fromId = msg.from.id;
   ensureUser(fromId, msg.from.username);
@@ -737,7 +737,8 @@ bot.onText(/\/rank(?:\s+@?(\w+))?/, (msg, match) => {
     );
 
     if (!targetId || !users[targetId]) {
-      return bot.sendMessage(chatId, `❌ User @${targetUsername} not found`);
+      const sentMsg = await bot.sendMessage(chatId, `❌ User @${targetUsername} not found`);
+      return setTimeout(() => bot.deleteMessage(chatId, sentMsg.message_id).catch(() => {}), 10000);
     }
 
     const u1 = users[fromId];
@@ -755,7 +756,9 @@ You: Lv *${u1.level}* — XP ${xpBar(u1.xp, u1.level)} — ChatID: \`${fromId}\`
 
 ${comparison}`;
 
-    return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    const sentMsg = await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    return setTimeout(() => bot.deleteMessage(chatId, sentMsg.message_id).catch(() => {}), 10000);
+
   } else {
     // Compare to top 3 users
     const u = users[fromId];
@@ -775,7 +778,8 @@ ${comparison}`;
       text += `#${i + 1} — @${user.username || id}: Lv *${user.level}* — XP ${xpBar(user.xp, user.level)} — ChatID: \`${id}\` — ${cmp}\n`;
     });
 
-    bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    const sentMsg = await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+    setTimeout(() => bot.deleteMessage(chatId, sentMsg.message_id).catch(() => {}), 10000);
   }
 });
 
@@ -1370,51 +1374,6 @@ ${result}
       parse_mode: 'Markdown'
     }
   );
-});
-
-// ================= /profile COMMAND =================
-bot.onText(/\/profile/, async (msg) => {
-  const chatId = msg.chat.id;
-  const userId = msg.from.id;
-
-  ensureUser(userId, msg.from.username);
-  const u = users[userId];
-  const roles = u.roles?.length ? u.roles.join(", ") : "_No roles owned yet_";
-
-const badge = u.cosmetics?.badge || 'None';
-const title = u.cosmetics?.title || 'None';
-const frame = u.cosmetics?.frame || 'None';
-
-  const profileText = `
-👤 *User Profile*
-
-🆔 ID: \`${userId}\`
-👑 Level: *${u.level}*
-📊 XP: ${xpBar(u.xp, u.level)}
-📅 Weekly XP: *${u.weeklyXp}*
-
-📦 Orders: *${u.orders?.length || 0}*
-🚫 Banned: *${u.banned ? 'Yes' : 'No'}*
-  `;
-
-  try {
-    // Try to fetch profile photo
-    const photos = await bot.getUserProfilePhotos(userId, { limit: 1 });
-
-    if (photos.total_count > 0) {
-      const fileId = photos.photos[0][photos.photos[0].length - 1].file_id;
-
-      return bot.sendPhoto(chatId, fileId, {
-        caption: profileText,
-        parse_mode: 'Markdown'
-      });
-    }
-  } catch (err) {
-    console.error('Profile photo fetch failed:', err.message);
-  }
-
-  // Fallback if no photo or error
-  bot.sendMessage(chatId, profileText, { parse_mode: 'Markdown' });
 });
 
 // ================= BLACKJACK WITH XP AS CURRENCY =================
