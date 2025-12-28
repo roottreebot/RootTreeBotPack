@@ -241,6 +241,15 @@ async function showMainMenu(id, lbPage = 0) {
   ensureUser(id);
   cleanupOrders(id);
 
+  function getLotteryStatusText() {
+  if (!meta.lottery.active || !meta.lottery.role) {
+    return '🎟 *Lottery Prize:* ❌ No active lottery';
+  }
+
+  return `🎟 *Lottery Prize:* 👑 *${meta.lottery.role}*
+👥 Entries: ${meta.lottery.entries.length}`;
+  }
+  
   const u = users[id];
   const highestRole = getHighestRole(u);
 
