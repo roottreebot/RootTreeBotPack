@@ -288,12 +288,6 @@ await sendOrEdit(
 📊 *XP*: ${xpBar(u.xp, u.level)}
 
 
-🌟 *Extra*
-
-${streakText(u)}
-${lotteryLine}
-
-
 📦 *Your Orders* (*Last 5*)
 
 ${orders}
@@ -302,6 +296,11 @@ ${lb.text}`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
   );
 }
+
+🌟 *Extra*
+
+${streakText(u)}
+${lotteryLine}
 
 // START handler
 bot.onText(/\/start|\/help/, async msg => {
