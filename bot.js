@@ -641,47 +641,48 @@ bot.on('callback_query', async (q) => {
 });
 
 // ================= /clearpending =================
-bot.onText(/\/clearpending(?:\s+@(\w+))?/, (msg, match) => {
+bot.onText(/\/clearpending(?:\s+(@?\w+))?/, (msg, match) => {
   const chatId = msg.chat.id;
 
   if (!ADMIN_IDS.includes(chatId)) {
     return bot.sendMessage(chatId, '❌ You are not authorized.');
   }
 
-  const username = match[1];
+  const targetUsername = match[1]; // Optional @username
 
-  // 🔹 CLEAR SINGLE USER
-  if (username) {
-    const userId = Object.keys(users).find(
-      id => users[id].username?.toLowerCase() === username.toLowerCase()
-    );
+  if (!targetUsername) {
+    // No username → clear ALL pending orders
+    bot.sendMessage(chatId, '⚠️ This will clear ALL pending orders.\nAre you sure?', {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '✅ YES, CLEAR ALL', callback_data: 'clearpending_confirm' }],
+          [{ text: '❌ Cancel', callback_data: 'clearpending_cancel' }]
+        ]
+      }
+    });
+  } else {
+    // Clear pending orders for a specific user
+    const cleanUsername = targetUsername.replace(/^@/, '').toLowerCase();
+    const userId = Object.keys(users).find(id => {
+      const u = users[id];
+      return u.username && u.username.toLowerCase() === cleanUsername;
+    });
 
-    if (!userId) {
-      return bot.sendMessage(chatId, `❌ User @${username} not found.`);
+    if (!userId || !users[userId]) {
+      return bot.sendMessage(chatId, `❌ User @${cleanUsername} not found.`);
     }
 
-    if (!users[userId].pending || users[userId].pending.length === 0) {
-      return bot.sendMessage(chatId, `ℹ️ @${username} has no pending orders.`);
+    const pendingOrders = users[userId].orders?.filter(o => o.status === 'Pending') || [];
+
+    if (pendingOrders.length === 0) {
+      return bot.sendMessage(chatId, `ℹ️ @${cleanUsername} has no pending orders.`);
     }
 
-    users[userId].pending = [];
-    saveUsers();
+    users[userId].orders = users[userId].orders.filter(o => o.status !== 'Pending');
+    saveAll();
 
-    return bot.sendMessage(
-      chatId,
-      `✅ Cleared all pending orders for @${username}`
-    );
+    return bot.sendMessage(chatId, `✅ Cleared ${pendingOrders.length} pending order(s) for @${cleanUsername}.`);
   }
-
-  // 🔹 CLEAR ALL (CONFIRMATION)
-  bot.sendMessage(chatId, '⚠️ This will clear ALL pending orders.\nAre you sure?', {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: '✅ YES, CLEAR ALL', callback_data: 'clearpending_confirm' }],
-        [{ text: '❌ Cancel', callback_data: 'clearpending_cancel' }]
-      ]
-    }
-  });
 });
 
 // ================= /removerole =================
