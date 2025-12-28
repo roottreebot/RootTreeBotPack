@@ -241,13 +241,12 @@ async function showMainMenu(id, lbPage = 0) {
   ensureUser(id);
   cleanupOrders(id);
 
-  function getLotteryStatusText() {
-  if (!meta.lottery.active || !meta.lottery.role) {
-    return '🎟 *Lottery Prize:* ❌ No active lottery';
+  function getLotteryMenuLine() {
+  if (!meta.lottery || !meta.lottery.active || !meta.lottery.role) {
+    return '🎟 /lottery Reward: None';
   }
 
-  return `🎟 *Lottery Prize:* 👑 *${meta.lottery.role}*
-👥 Entries: ${meta.lottery.entries.length}`;
+  return `🎟 /lottery Reward: ${meta.lottery.role}`;
   }
   
   const u = users[id];
@@ -274,13 +273,18 @@ async function showMainMenu(id, lbPage = 0) {
     kb.push([storeBtn]);
   }
 
-const lotteryText = getLotteryStatusText();
-  
-  const storeStatus = meta.storeOpen ? '🟢 *Store Open*' : '🔴 *Store Closed*';
+const lotteryLine = getLotteryMenuLine();
 
-  await sendOrEdit(
-    id,
+const text = `
+🏠 *Main Menu*
+
+${meta.storeOpen ? '🟢 Store Open' : '🔴 Store Closed'}
+
+...
+`;
+
 `${storeStatus}
+ ${lotteryLine}
 
 👑 *Highest Role*: *${highestRole}*
 🎚 Level: *${u.level}*
@@ -1095,6 +1099,7 @@ if (!meta.lottery) {
     active: false,
     role: null,
     entries: []
+    saveAll();
   };
 }
 
