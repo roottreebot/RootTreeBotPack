@@ -1751,7 +1751,8 @@ bot.onText(/\/clearfeedback/, msg => {
 
   bot.sendMessage(id, '🗑 *All feedback cleared*', { parse_mode: 'Markdown' });
 });
-// ================= /daily WITH STREAK =================
+
+// ================= /daily WITH STREAK (AUTO DELETE) =================
 bot.onText(/\/daily/, (msg) => {
   const id = msg.chat.id;
   ensureUser(id, msg.from.username);
@@ -1770,19 +1771,23 @@ bot.onText(/\/daily/, (msg) => {
       id,
       `⏳ *Daily already claimed*\n\nCome back in *${hours}h ${mins}m*`,
       { parse_mode: 'Markdown' }
-    );
+    ).then(sent => {
+      setTimeout(() => {
+        bot.deleteMessage(id, sent.message_id).catch(() => {});
+      }, 10000);
+    });
   }
 
   // 🔁 Streak logic
   if (now - u.lastDaily <= DAY * 2) {
-    u.dailyStreak += 1; // streak continues
+    u.dailyStreak += 1;
   } else {
-    u.dailyStreak = 1; // streak reset
+    u.dailyStreak = 1;
   }
 
   // 🎁 Reward calculation
   const baseXP = 10;
-  const streakBonus = Math.min(u.dailyStreak * 2, 30); // cap bonus
+  const streakBonus = Math.min(u.dailyStreak * 2, 30);
   const totalXP = baseXP + streakBonus;
 
   giveXP(id, totalXP);
@@ -1790,7 +1795,7 @@ bot.onText(/\/daily/, (msg) => {
   u.lastDaily = now;
   saveAll();
 
-  // 🧾 Message
+  // 🧾 Reward message
   bot.sendMessage(
     id,
 `🎁 *Daily Reward Claimed!*
@@ -1804,7 +1809,11 @@ bot.onText(/\/daily/, (msg) => {
 
 Come back tomorrow to keep the streak alive!`,
     { parse_mode: 'Markdown' }
-  );
+  ).then(sent => {
+    setTimeout(() => {
+      bot.deleteMessage(id, sent.message_id).catch(() => {});
+    }, 10000);
+  });
 });
 
 // ================= /givewxp =================
