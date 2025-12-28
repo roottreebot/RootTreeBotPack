@@ -299,8 +299,8 @@ ${streakText(u)}
 ${lotteryLine}
 
 📦 *Product*
-Sprite Popperz - Amazing Dirty, Sticky & White Buds
-Killer Green Budz - Amazing Green Buds
+🥤 *Sprite Popperz* - Amazing Earthy, Sticky & White Buds
+🍃 *Killer Green Budz* - Amazing Green Buds
 
 ${lb.text}`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
