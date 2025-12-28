@@ -292,15 +292,16 @@ await sendOrEdit(
 
 ${orders}
 
-${lb.text}`,
-    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
-  );
-}
 
 🌟 *Extra*
 
 ${streakText(u)}
 ${lotteryLine}
+
+${lb.text}`,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
+  );
+}
 
 // START handler
 bot.onText(/\/start|\/help/, async msg => {
