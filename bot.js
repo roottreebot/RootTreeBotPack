@@ -33,6 +33,20 @@ function spinReel() {
   return SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)];
 }
 
+// ================= AUTO DELETE USER MESSAGES =================
+bot.on('message', msg => {
+  // Ignore bot messages
+  if (msg.from.is_bot) return;
+
+  // Allow /start to stay
+  if (msg.text && msg.text.startsWith('/start')) return;
+
+  // Delete everything else after 1 second
+  setTimeout(() => {
+    bot.deleteMessage(msg.chat.id, msg.message_id).catch(() => {});
+  }, 1000);
+});
+
 // ================= FILES =================
 const DB_FILE = 'users.json';
 const META_FILE = 'meta.json';
