@@ -249,39 +249,6 @@ async function sendOrEdit(id, text, opt = {}) {
   sessions[id].mainMsgId = m.message_id;
 }
 
-async function editMenuWithImage(id, photoFileId, text, opt = {}) {
-  if (!sessions[id]?.mainMsgId) {
-    // fallback if message doesn't exist yet
-    const m = await bot.sendPhoto(id, photoFileId, {
-      caption: text,
-      parse_mode: 'Markdown',
-      ...opt
-    });
-    sessions[id] = { mainMsgId: m.message_id };
-    return;
-  }
-
-  try {
-    // 1️⃣ Edit image
-    await bot.editMessageMedia(
-      {
-        type: 'photo',
-        media: photoFileId,
-        caption: text,
-        parse_mode: 'Markdown'
-      },
-      {
-        chat_id: id,
-        message_id: sessions[id].mainMsgId,
-        reply_markup: opt.reply_markup
-      }
-    );
-  } catch (err) {
-    // If media edit fails, fallback to text edit
-    await sendOrEdit(id, text, opt);
-  }
-}
-
 // ================= MAIN MENU =================
 async function showMainMenu(id, lbPage = 0) {
   ensureUser(id);
@@ -315,20 +282,8 @@ async function showMainMenu(id, lbPage = 0) {
 
   const lotteryLine = getLotteryMenuText();
 
-if (selectedImage) {
-  await editMenuWithImage(
-    id,
-    selectedImage,
-    MENU_TEXT,
-    { reply_markup: { inline_keyboard: kb } }
-  );
-} else {
-  await sendOrEdit(
-    id,
-    MENU_TEXT,
-    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
-  );
-}
+await sendOrEdit(
+  id,
 `${storeStatus}
 
 
@@ -358,9 +313,6 @@ ${lb.text}`,
 }
 
 // START handler
-const s = sessions[id] || {};
-const selectedImage = s.product ? PRODUCT_IMAGES[s.product] : null;
-
 bot.onText(/\/start|\/help/, async msg => {
   await showMainMenu(msg.chat.id, 0);
 });
@@ -420,19 +372,7 @@ bot.on('callback_query', async q => {
 
   if (q.data.startsWith('product_')) {
   if (!meta.storeOpen)
-    return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed!', show_alert: true });
-
-  const s = sessions[id] || (sessions[id] = {});
-
-  const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
-  if (pendingCount >= 2)
-    return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
-
-  s.product = q.data.replace('product_', '');
-  s.step = 'amount';
-
-  return showMainMenu(id);
-  }
+    return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Orders disabled.', show_alert: true });
 
   if (Date.now() - (s.lastClick || 0) < 30000)
     return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
@@ -488,10 +428,7 @@ bot.on('callback_query', async q => {
     users[id].orders = users[id].orders.slice(-5);
     saveAll();
 
-   delete sessions[id].product;
-delete sessions[id].step;
-  
-  for (const admin of ADMIN_IDS) {
+    for (const admin of ADMIN_IDS) {
       const m = await bot.sendMessage(
         admin,
 `🧾 *NEW ORDER*
