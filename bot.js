@@ -465,65 +465,59 @@ bot.on('callback_query', async q => {
   }
 });
 
-// ================= MESSAGE HANDLER FOR GRAMS / $ =================
+// ================= CLEAN AMOUNT INPUT HANDLER =================
 bot.on('message', async msg => {
   const id = msg.chat.id;
   const s = sessions[id];
+
+  // Only listen when user is choosing amount
   if (!s || s.step !== 'amount' || !s.product) return;
+  if (!msg.text) return;
 
-  // Auto-reset if main message deleted
-  if (s.mainMsgId) {
-    const check = await bot.getChatMessage(id, s.mainMsgId).catch(() => null);
-    if (!check) s.mainMsgId = null;
-  }
+  // Delete user's input message immediately
+  bot.deleteMessage(id, msg.message_id).catch(() => {});
 
-  let value = parseFloat(msg.text.replace(/\$/g, ''));
+  // Extract number
+  const raw = msg.text.replace(',', '.').replace(/[^0-9.$]/g, '');
+  let value = parseFloat(raw.replace('$', ''));
+
   if (isNaN(value) || value <= 0) return;
 
   const pricePerGram = PRODUCTS[s.product].price;
 
-  if (msg.text.includes('$')) {
-    s.cash = value;
+  // Determine grams vs $
+  if (raw.includes('$')) {
+    s.cash = parseFloat(value.toFixed(2));
     s.grams = parseFloat((s.cash / pricePerGram).toFixed(2));
   } else {
-    s.grams = value;
+    s.grams = parseFloat(value.toFixed(2));
     s.cash = parseFloat((s.grams * pricePerGram).toFixed(2));
   }
 
-  // Update main menu message
-  const captionText = `🪴 You Have Chosen: *${s.product}*\n💲 Price per gram: $${pricePerGram}\n✏️ Grams: ${s.grams}g\n💲 Total: $${s.cash}\n📝 Press ✅ Confirm Order\n↩️ Or Back`;
+  // Build updated YOU HAVE CHOSEN message
+  const captionText =
+`🪴 You Have Chosen: *${s.product}*
+💲 Price per gram: $${pricePerGram}
 
+✏️ Amount: *${s.grams}g*
+💲 Total: *$${s.cash}*
+
+📝 Press ✅ Confirm Order
+↩️ Or Back`;
+
+  // Edit existing main message ONLY
   if (s.mainMsgId) {
     await bot.editMessageCaption(captionText, {
       chat_id: id,
       message_id: s.mainMsgId,
-      parse_mode: 'Markdown'
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '✅ Confirm Order', callback_data: 'confirm_order' }],
+          [{ text: '↩️ Back', callback_data: 'reload' }]
+        ]
+      }
     }).catch(() => {});
-  } else {
-    const img = PRODUCT_IMAGES[s.product];
-    if (img) {
-      const sent = await bot.sendPhoto(id, img, {
-        caption: captionText,
-        parse_mode: 'Markdown',
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '✅ Confirm Order', callback_data: 'confirm_order' }],
-            [{ text: '↩️ Back', callback_data: 'reload' }]
-          ]
-        }
-      });
-      s.mainMsgId = sent.message_id;
-    } else {
-      const sent = await sendOrEdit(id, captionText, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: '✅ Confirm Order', callback_data: 'confirm_order' }],
-            [{ text: '↩️ Back', callback_data: 'reload' }]
-          ]
-        }
-      });
-      s.mainMsgId = sent.message_id;
-    }
   }
 });
 
