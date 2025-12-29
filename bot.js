@@ -389,16 +389,17 @@ bot.on('callback_query', async q => {
 
   const img = PRODUCT_IMAGES[s.product];
 
-  if (img) {
-    const sent = await bot.sendPhoto(id, img, {
-      caption:
-        `🪴 You Have Chosen: *${s.product}*\n` +
-        `💲 Price per gram: $${PRODUCTS[s.product].price}\n\n` +
-        `✏️ Send grams or $ amount (g) for *${s.product}*`,
-        `📝 Once Done Scroll Up To Confirm Your *${s.product}* Order, (Do NOT Spam)\n`
-        `❌️ *This Message Will Delete In 30 Seconds, Make Sure To Be Quick*`                            
-      parse_mode: 'Markdown'
-    });
+if (img) {
+  const sent = await bot.sendPhoto(id, img, {
+    caption: `🪴 You Have Chosen: *${s.product}*
+💲 Price per gram: $${PRODUCTS[s.product].price}
+
+✏️ Send grams or $ amount (g) for *${s.product}*
+📝 Once Done Scroll Up To Confirm Your *${s.product}* Order, (Do NOT Spam)
+❌️ *This Message Will Delete In 30 Seconds, Make Sure To Be Quick*`,
+    parse_mode: 'Markdown'
+  });
+}
 
     // OPTIONAL auto-delete after 30s (remove if you want it to stay)
     setTimeout(() => {
