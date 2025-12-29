@@ -410,46 +410,52 @@ bot.on('callback_query', async q => {
   }
 
   // ---------- CONFIRM ORDER ----------
-  if (q.data === 'confirm_order') {
-    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Cannot confirm order.', show_alert: true });
+if (q.data === 'confirm_order') {
+  if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Cannot confirm order.', show_alert: true });
 
-    const xp = Math.floor(2 + s.cash * 0.5);
-    const order = {
-      product: s.product,
-      grams: s.grams,
-      cash: s.cash,
-      status: 'Pending',
-      pendingXP: xp,
-      adminMsgs: []
-    };
+  const xp = Math.floor(2 + s.cash * 0.5);
+  const order = {
+    product: s.product,
+    grams: s.grams,
+    cash: s.cash,
+    status: 'Pending',
+    pendingXP: xp,
+    adminMsgs: []
+  };
 
-    users[id].orders.push(order);
-    users[id].orders = users[id].orders.slice(-5);
-    saveAll();
+  users[id].orders.push(order);
+  users[id].orders = users[id].orders.slice(-5);
+  saveAll();
 
-    for (const admin of ADMIN_IDS) {
-      const m = await bot.sendMessage(admin,
-        `🧾 *NEW ORDER*
+  // DELETE the main menu / summary message for this order
+  if (s.mainMsgId) {
+    bot.deleteMessage(id, s.mainMsgId).catch(() => {});
+    s.mainMsgId = null;
+  }
+
+  for (const admin of ADMIN_IDS) {
+    const m = await bot.sendMessage(admin,
+      `🧾 *NEW ORDER*
 User: @${users[id].username || id}
 Product: ${order.product}
 Grams: ${order.grams}g
 Price: $${order.cash}
 Status: ⚪ Pending`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [[
-              { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
-              { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
-            ]]
-          }
+      {
+        parse_mode: 'Markdown',
+        reply_markup: {
+          inline_keyboard: [[
+            { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
+            { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
+          ]]
         }
-      );
-      order.adminMsgs.push({ admin, msgId: m.message_id });
-    }
-
-    return showMainMenu(id);
+      }
+    );
+    order.adminMsgs.push({ admin, msgId: m.message_id });
   }
+
+  return showMainMenu(id);
+}
 
   // ---------- ADMIN ACTIONS ----------
   if (q.data.startsWith('admin_')) {
