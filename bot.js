@@ -382,7 +382,8 @@ bot.on('callback_query', async q => {
    const img = PRODUCT_IMAGES[s.product];
 
   if (img) {
-    const sent = await bot.sendPhoto(id, img, {
+    const sent = await bot.sendPhoto(id, img,
+                                     
     s.product = q.data.replace('product_', '');
     s.step = 'amount';
     return sendOrEdit(id, `✏️ Send grams or $ amount for *${s.product}*`);
