@@ -375,24 +375,18 @@ bot.on('callback_query', async q => {
     if (Date.now() - (s.lastClick || 0) < 30000) return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
     s.lastClick = Date.now();
 
-  // ✅ Max 2 pending orders
-  const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
-  if (pendingCount >= 2)
-    return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
+ // ✅ MAX 2 PENDING ORDERS
+    const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
+    if (pendingCount >= 2) return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
 
-  s.product = q.data.replace('product_', '');
-  s.step = 'amount';
-
-  const img = PRODUCT_IMAGES[s.product];
+   const img = PRODUCT_IMAGES[s.product];
 
   if (img) {
     const sent = await bot.sendPhoto(id, img, {
-      caption:
-        `🪴 *${s.product}*\n` +
-        `💲 Price per gram: $${PRODUCTS[s.product].price}\n\n` +
-        `✏️ Send grams or $ amount for *${s.product}*`,
-      parse_mode: 'Markdown'
-    });
+    s.product = q.data.replace('product_', '');
+    s.step = 'amount';
+    return sendOrEdit(id, `✏️ Send grams or $ amount for *${s.product}*`);
+  }
 
     // OPTIONAL auto-delete after 30s (remove if you want it to stay)
     setTimeout(() => {
