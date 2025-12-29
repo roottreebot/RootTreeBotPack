@@ -302,7 +302,7 @@ await sendOrEdit(
 
 
 📊 *Level System*
-
+   *Buy Roles /shop & /buy*
 👑 *Highest Role*: *${highestRole}*
 🎚 Level: *${u.level}*
 📊 *XP*: ${xpBar(u.xp, u.level)}
