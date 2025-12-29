@@ -371,13 +371,9 @@ bot.on('callback_query', async q => {
   }
 
   if (q.data.startsWith('product_')) {
-  if (!meta.storeOpen)
-    return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Orders disabled.', show_alert: true });
-
-  if (Date.now() - (s.lastClick || 0) < 30000)
-    return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
-
-  s.lastClick = Date.now();
+    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: '🛑 Store is closed! Orders disabled.', show_alert: true });
+    if (Date.now() - (s.lastClick || 0) < 30000) return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
+    s.lastClick = Date.now();
 
   // ✅ Max 2 pending orders
   const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
