@@ -140,9 +140,14 @@ const PRODUCTS = {
 
 // ================= ROLE SHOP =================
 const ROLE_SHOP = {
-  "🌟 Starter": { price: 50 },
-  "🌀 New": { price: 50 },
-  "🌱 FreshLeaf": { price: 70 },
+  "🌟 Starter": { price: 10 },
+  "🌀 New": { price: 10 },
+  "🌱 FreshLeaf": { price: 20 },
+  "🧊 IceTouch": { price: 40 },
+  "💉 VeinFinder": { price: 50 },
+  "🧪 CookedBrain": { price: 70 },
+  "🧠 ChemicalLove": { price: 80 },
+  "☣️ ToxicHabit": { price: 95 },
   "💨 Smoke": { price: 100 },
   "🔥 Joint": { price: 120 },
   "🍀 RollUp": { price: 140 },
