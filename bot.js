@@ -379,6 +379,7 @@ bot.on('callback_query', async q => {
 
 // ================= PRODUCT SELECTION =================
 if (q.data.startsWith('product_')) {
+  await sendProductImage(id, s.product);
   if (!meta.storeOpen)
     return bot.answerCallbackQuery(q.id, { text: 'Store is closed!', show_alert: true });
 
