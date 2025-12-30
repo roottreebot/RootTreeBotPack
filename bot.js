@@ -393,6 +393,26 @@ if (q.data.startsWith('product_')) {
 
   // Get product image from PRODUCT_IMAGES
   const imageId = PRODUCT_IMAGES[s.product];
+
+  if (imageId) {
+    // Send or edit the message with photo + caption
+    await sendOrEdit(id, {
+      photo: imageId,
+      caption: text,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  } else {
+    // No image → just edit text
+    await sendOrEdit(id, {
+      text: text,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+
+  return;
+}
   
   const text =
 `🪴 *YOU HAVE CHOSEN*
