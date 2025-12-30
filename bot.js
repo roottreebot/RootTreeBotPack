@@ -370,7 +370,7 @@ bot.on('callback_query', async q => {
     meta.storeOpen = false; saveAll(); return showMainMenu(id);
   }
 
- // ================= PRODUCT SELECTION =================
+// ================= PRODUCT SELECTION =================
 if (q.data.startsWith('product_')) {
   if (!meta.storeOpen)
     return bot.answerCallbackQuery(q.id, { text: 'Store is closed!', show_alert: true });
@@ -411,86 +411,14 @@ if (q.data.startsWith('product_')) {
     ]
   };
 
+  // ALWAYS edit TEXT — never caption
+  await sendOrEdit(id, text, {
+    parse_mode: 'Markdown',
+    reply_markup: keyboard
+  });
+
   return;
 }
-  
-  if (q.data === 'confirm_order') {
-    if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Cannot confirm order.', show_alert: true });
-
-    const xp = Math.floor(2 + s.cash * 0.5);
-    const order = {
-      product: s.product,
-      grams: s.grams,
-      cash: s.cash,
-      status: 'Pending',
-      pendingXP: xp,
-      adminMsgs: []
-    };
-
-    users[id].orders.push(order);
-    users[id].orders = users[id].orders.slice(-5);
-    saveAll();
-
-    for (const admin of ADMIN_IDS) {
-      const m = await bot.sendMessage(
-        admin,
-`🧾 *NEW ORDER*
-User: @${users[id].username || id}
-Product: ${order.product}
-Grams: ${order.grams}g
-Price: $${order.cash}
-Status: ⚪ Pending`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [[
-              { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
-              { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
-            ]]
-          }
-        }
-      );
-      order.adminMsgs.push({ admin, msgId: m.message_id });
-    }
-
-    return showMainMenu(id);
-  }
-
-  if (q.data.startsWith('admin_')) {
-    const [, action, uid, index] = q.data.split('_');
-    const userId = Number(uid);
-    const i = Number(index);
-    const order = users[userId]?.orders[i];
-    if (!order || order.status !== 'Pending') return;
-
-    order.status = action === 'accept' ? '✅ Accepted' : '❌ Rejected';
-
-    if (action === 'accept') {
-      giveXP(userId, order.pendingXP);
-      delete order.pendingXP;
-      bot.sendMessage(userId, '✅ Your order has been accepted!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
-    } else {
-      bot.sendMessage(userId, '❌ Your order has been rejected!').then(msg => setTimeout(() => bot.deleteMessage(userId, msg.message_id).catch(() => {}), 5000));
-      users[userId].orders = users[userId].orders.filter(o => o !== order);
-    }
-
-    const adminText = `🧾 *ORDER UPDATED*
-User: @${users[userId].username || userId}
-Product: ${order.product}
-Grams: ${order.grams}g
-Price: $${order.cash}
-Status: ${order.status}`;
-
-    for (const { admin, msgId } of order.adminMsgs) {
-      bot.editMessageText(adminText, { chat_id: admin, message_id: msgId, parse_mode: 'Markdown' }).catch(() => {});
-    }
-
-    saveAll();
-    return showMainMenu(userId);
-  }
-
-
-});
 
 // ================= USER INPUT =================
 bot.on('message', msg => {
