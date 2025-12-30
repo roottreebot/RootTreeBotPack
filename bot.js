@@ -437,13 +437,13 @@ Choose how you want to enter the amount`;
   if (q.data === 'amount_cash') {
     s.step = 'amount';
     s.inputType = 'cash';
-    return bot.answerCallbackQuery(q.id, { text: 'Send $ amount in chat' });
+    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send $ Amount Waiting For Your Input!' });
   }
 
   if (q.data === 'amount_grams') {
     s.step = 'amount';
     s.inputType = 'grams';
-    return bot.answerCallbackQuery(q.id, { text: 'Send grams in chat' });
+    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send Grams Waiting For Your Input!' });
   }
 
   // ================= CONFIRM ORDER =================
