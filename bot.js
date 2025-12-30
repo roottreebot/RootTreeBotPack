@@ -382,43 +382,37 @@ bot.on('callback_query', async q => {
   }
 
   // ================= PRODUCT SELECTION =================
-  if (q.data.startsWith('product_')) {
-    if (!meta.storeOpen) {
-      return bot.answerCallbackQuery(q.id, {
-        text: 'Store is closed',
-        show_alert: true
-      });
-    }
+if (q.data.startsWith('product_')) {
+  if (!meta.storeOpen) {
+    return bot.answerCallbackQuery(q.id, { text: 'Store is closed', show_alert: true });
+  }
 
-    const pending = users[id].orders.filter(o => o.status === 'Pending').length;
-    if (pending >= 2) {
-      return bot.answerCallbackQuery(q.id, {
-        text: 'You already have 2 pending orders',
-        show_alert: true
-      });
-    }
+  const pending = users[id].orders.filter(o => o.status === 'Pending').length;
+  if (pending >= 2) {
+    return bot.answerCallbackQuery(q.id, { text: 'You already have 2 pending orders', show_alert: true });
+  }
 
-    s.product = q.data.replace('product_', '');
-    s.step = 'choose_amount';
-    s.inputType = null;
-    s.grams = null;
-    s.cash = null;
+  s.product = q.data.replace('product_', '');
+  s.step = 'choose_amount';
+  s.inputType = null;
+  s.grams = null;
+  s.cash = null;
 
-    const price = PRODUCTS[s.product].price;
+  const price = PRODUCTS[s.product].price;
 
-    const keyboard = {
-      inline_keyboard: [
-        [
-          { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
-          { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
-        ],
-        [
-          { text: '↩️ Back', callback_data: 'reload' }
-        ]
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
+        { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
+      ],
+      [
+        { text: '↩️ Back', callback_data: 'reload' }
       ]
-    };
+    ]
+  };
 
-    const text =
+  const text =
 `🪴 *YOU HAVE CHOSEN*
 *${s.product}*
 
@@ -427,23 +421,26 @@ bot.on('callback_query', async q => {
 
 ❗️*Note Anything Under 2 ($20) Will Be Auto Rejected*`;
 
-    await sendOrEdit(id, text, {
-      parse_mode: 'Markdown',
-      reply_markup: keyboard
-    });
+  // send message and save its ID
+  const msg = await sendOrEdit(id, text, {
+    parse_mode: 'Markdown',
+    reply_markup: keyboard
+  });
+  s.lastMsgId = msg.message_id; // save the message ID here
 
-    return;
-  }
+  return;
+}
 
 // ================= AMOUNT TYPE =================
 if (q.data === 'amount_cash' || q.data === 'amount_grams') {
-  if (!s.product) 
+  if (!s.product || !s.lastMsgId)
     return bot.answerCallbackQuery(q.id, { text: 'Please select a product first', show_alert: true });
 
   s.step = 'amount';
   s.inputType = q.data === 'amount_cash' ? 'cash' : 'grams';
 
   const price = PRODUCTS[s.product].price;
+
   const text =
 `🪴 *YOU HAVE CHOSEN*
 *${s.product}*
@@ -465,23 +462,17 @@ Please type your desired amount below.`;
     ]
   };
 
-  // ALWAYS edit the existing "YOU HAVE CHOSEN" message
-  if (s.lastMsgId) {
-    try {
-      await bot.editMessageText(text, {
-        chat_id: id,
-        message_id: s.lastMsgId,
-        parse_mode: 'Markdown',
-        reply_markup: keyboard
-      });
-    } catch (err) {
-      console.error('Failed to edit message:', err);
-      // fallback if edit fails
-      const msgSent = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
-      s.lastMsgId = msgSent.message_id;
-    }
-  } else {
-    // If lastMsgId is missing, send new message and save its ID
+  // EDIT the existing "YOU HAVE CHOSEN" message
+  try {
+    await bot.editMessageText(text, {
+      chat_id: id,
+      message_id: s.lastMsgId,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  } catch (err) {
+    console.error('Failed to edit message:', err);
+    // fallback if edit fails
     const msgSent = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
     s.lastMsgId = msgSent.message_id;
   }
