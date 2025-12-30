@@ -370,42 +370,6 @@ bot.on('callback_query', async q => {
     meta.storeOpen = false; saveAll(); return showMainMenu(id);
   }
 
-// ================= CALLBACK HANDLER WITH RELOAD =================
-bot.on('callback_query', async q => {
-  const id = q.message.chat.id;
-  ensureUser(id, q.from.username);
-  if (!sessions[id]) sessions[id] = {};
-  const s = sessions[id];
-
-  // ===== RELOAD / BACK TO MAIN MENU =====
-  if (q.data === 'reload') {
-    // Delete current product selection message
-    try {
-      if (s.lastMsgId) await bot.deleteMessage(id, s.lastMsgId);
-      s.lastMsgId = null;
-    } catch {}
-
-    // Reset session
-    s.step = null;
-    s.product = null;
-    s.grams = null;
-    s.cash = null;
-    s.inputType = null;
-
-    // Build main menu buttons
-    const keyboard = {
-      inline_keyboard: Object.keys(PRODUCTS).map(name => [{ text: name, callback_data: `product_${name}` }])
-    };
-
-    const text = '🛒 *Welcome to the Store!*\nSelect a product to start your order:';
-
-    // Send new main menu
-    const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-    s.lastMsgId = msg.message_id;
-
-    return bot.answerCallbackQuery(q.id);
-  }
-
   // ===== PRODUCT SELECTION =====
   if (q.data.startsWith('product_')) {
     if (!meta.storeOpen)
