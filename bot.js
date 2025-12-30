@@ -411,16 +411,7 @@ if (q.data.startsWith('product_')) {
     ]
   };
 
-  // ALWAYS edit TEXT — never caption
-  await sendOrEdit(id, text, {
-    parse_mode: 'Markdown',
-    reply_markup: keyboard
-  });
-
-  return;
-}
-
- // Get product image from PRODUCT_IMAGES
+  // Get product image from PRODUCT_IMAGES
   const imageId = PRODUCT_IMAGES[s.product];
 
   if (imageId) {
@@ -439,6 +430,12 @@ if (q.data.startsWith('product_')) {
       reply_markup: keyboard
     });
   }
+  
+  // ALWAYS edit TEXT — never caption
+  await sendOrEdit(id, text, {
+    parse_mode: 'Markdown',
+    reply_markup: keyboard
+  });
 
   return;
 }
