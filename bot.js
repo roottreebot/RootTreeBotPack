@@ -1067,7 +1067,8 @@ bot.onText(/\/spritepop/, async (msg) => {
 
 🏅 *Created By @v1leshop*
 
-📝 *Sprite Popperz* Have A Taste Of This Refreshing Bud! Crystally, Sticky & Delicious Tasting Bud!
+📝 A Refreshing Burst of Flavor!
+Dive into the crisp, sticky, and flavorful world of Sprite Popperz. Each nug sparkles with crystally trichomes, offering a smooth and delicious taste that delights your senses. Perfect for unwinding, boosting creativity, or simply enjoying a premium smoke. Let Sprite Popperz elevate your experience!
 `;
 
   const sent = await bot.sendMessage(id, text, { parse_mode: 'Markdown' });
