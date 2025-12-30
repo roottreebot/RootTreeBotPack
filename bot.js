@@ -381,7 +381,7 @@ bot.on('callback_query', async q => {
     return showMainMenu(id);
   }
 
-  // ================= PRODUCT SELECTION =================
+// ================= PRODUCT SELECTION =================
 if (q.data.startsWith('product_')) {
   if (!meta.storeOpen)
     return bot.answerCallbackQuery(q.id, { text: 'Store is closed', show_alert: true });
@@ -419,12 +419,54 @@ if (q.data.startsWith('product_')) {
 
 ❗️*Note Anything Under 2 ($20) Will Be Auto Rejected*`;
 
-  // send product selection message and save its ID
   const msg = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
-  s.productMsgId = msg.message_id; // <- IMPORTANT: edit this later
+  s.productMsgId = msg.message_id; // save this to delete later
 
   return;
 }
+
+// ================= HANDLE USER TEXT INPUT =================
+bot.on('message', async (msg) => {
+  const id = msg.chat.id;
+  const s = sessions[id];
+  if (!s || s.step !== 'amount' || !s.inputType || !s.product) return;
+
+  // Delete the product selection message immediately
+  if (s.productMsgId) {
+    try {
+      await bot.deleteMessage(id, s.productMsgId);
+    } catch {}
+    s.productMsgId = null;
+  }
+
+  const value = parseFloat(msg.text.replace(/[^0-9.]/g, ''));
+  if (isNaN(value) || value <= 0) return;
+
+  const price = PRODUCTS[s.product].price;
+
+  if (s.inputType === 'grams') {
+    s.grams = value;
+    s.cash = parseFloat((s.grams * price).toFixed(2));
+  } else if (s.inputType === 'cash') {
+    s.cash = value;
+    s.grams = parseFloat((s.cash / price).toFixed(2));
+  }
+
+  s.step = 'confirm';
+
+  const text = `✅ *ORDER SUMMARY*\n\n🪴 Product: *${s.product}*\n⚖️ Grams: *${s.grams}g*\n💲 Total: *$${s.cash}*`;
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: '✅ Confirm', callback_data: 'confirm_order' },
+        { text: '↩️ Back', callback_data: 'reload' }
+      ]
+    ]
+  };
+
+  const msgSent = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+  s.lastMsgId = msgSent.message_id;
+});
   
 // ================= AMOUNT TYPE =================
 if (q.data === 'amount_cash' || q.data === 'amount_grams') {
