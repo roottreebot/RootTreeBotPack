@@ -377,80 +377,56 @@ bot.on('callback_query', async q => {
     return showMainMenu(id);
   }
 
-  // ================= PRODUCT SELECTION =================
-  if (q.data.startsWith('product_')) {
-    if (!meta.storeOpen) {
-      return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Orders disabled.', show_alert: true });
-    }
+// ================= PRODUCT SELECTION =================
+if (q.data.startsWith('product_')) {
+  if (!meta.storeOpen)
+    return bot.answerCallbackQuery(q.id, { text: 'Store is closed!', show_alert: true });
 
-    if (Date.now() - (s.lastClick || 0) < 30000) {
-      return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
-    }
-    s.lastClick = Date.now();
+  if (Date.now() - (s.lastClick || 0) < 30000)
+    return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
 
-    const pendingCount = u.orders.filter(o => o.status === 'Pending').length;
-    if (pendingCount >= 2) {
-      return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
-    }
+  s.lastClick = Date.now();
 
-    s.product = q.data.replace('product_', '');
-    s.step = 'amount';
-    s.grams = null;
-    s.cash = null;
+  const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
+  if (pendingCount >= 2)
+    return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
 
-    const captionText =
-`🪴 *You Have Chosen*
+  s.product = q.data.replace('product_', '');
+  s.step = 'amount';
+  s.grams = null;
+  s.cash = null;
+
+  const price = PRODUCTS[s.product].price;
+
+  const text =
+`🪴 *YOU HAVE CHOSEN*
 *${s.product}*
 
-💲 Price per gram: $${PRODUCTS[s.product].price}
+💲 Price per gram: *$${price}*
 
 ✏️ Send grams or $ amount`;
 
-    const amountKeyboard = {
-      inline_keyboard: [
-        [
-          { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
-          { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
-        ],
-        [
-          { text: '↩️ Back', callback_data: 'reload' }
-        ]
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
+        { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
+      ],
+      [
+        { text: '↩️ Back', callback_data: 'reload' }
       ]
-    };
+    ]
+  };
 
-    // Edit existing menu message (TEXT or PHOTO)
-    if (PRODUCT_IMAGES[s.product]) {
-      await bot.editMessageCaption(captionText, {
-        chat_id: id,
-        message_id: s.mainMsgId,
-        parse_mode: 'Markdown',
-        reply_markup: amountKeyboard
-      }).catch(async () => {
-        const sent = await bot.sendPhoto(id, PRODUCT_IMAGES[s.product], {
-          caption: captionText,
-          parse_mode: 'Markdown',
-          reply_markup: amountKeyboard
-        });
-        s.mainMsgId = sent.message_id;
-      });
-    } else {
-      await bot.editMessageText(captionText, {
-        chat_id: id,
-        message_id: s.mainMsgId,
-        parse_mode: 'Markdown',
-        reply_markup: amountKeyboard
-      }).catch(async () => {
-        const sent = await bot.sendMessage(id, captionText, {
-          parse_mode: 'Markdown',
-          reply_markup: amountKeyboard
-        });
-        s.mainMsgId = sent.message_id;
-      });
-    }
+  // ALWAYS edit TEXT — never caption
+  await sendOrEdit(id, text, {
+    parse_mode: 'Markdown',
+    reply_markup: keyboard
+  });
 
-    return;
-  }
-
+  return;
+}
+  
   // ================= AMOUNT BUTTONS =================
   if (q.data === 'amount_cash') {
     s.step = 'amount';
