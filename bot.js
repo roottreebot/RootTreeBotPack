@@ -411,32 +411,6 @@ if (q.data.startsWith('product_')) {
     ]
   };
 
-  const imageId = PRODUCT_IMAGES[s.product];
-
-  if (imageId) {
-    // If there is a previous message, try editing it as photo
-    if (s.lastMsgId) {
-      try {
-        await bot.editMessageMedia(
-          { type: 'photo', media: imageId, caption: text, parse_mode: 'Markdown' },
-          { chat_id: id, message_id: s.lastMsgId, reply_markup: keyboard }
-        );
-      } catch {
-        // If edit fails (probably because last message was text), send new photo
-        const msg = await bot.sendPhoto(id, imageId, { caption: text, parse_mode: 'Markdown', reply_markup: keyboard });
-        s.lastMsgId = msg.message_id;
-      }
-    } else {
-      // No previous message → send new photo
-      const msg = await bot.sendPhoto(id, imageId, { caption: text, parse_mode: 'Markdown', reply_markup: keyboard });
-      s.lastMsgId = msg.message_id;
-    }
-  } else {
-    // No image → just edit or send text
-    const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-    s.lastMsgId = msg.message_id;
-  }
-
   return;
 }
   
