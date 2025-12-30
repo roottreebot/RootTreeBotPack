@@ -252,26 +252,66 @@ function getLeaderboard(page = 0) {
   return { text, buttons };
 }
 
-// ================= SEND/EDIT MAIN MENU =================
-async function sendOrEdit(id, text, opt = {}) {
+// ================= SEND OR EDIT (TEXT OR PHOTO) =================
+async function sendOrEdit(id, content, options = {}) {
+  // Ensure session exists
   if (!sessions[id]) sessions[id] = {};
-  const mid = sessions[id].mainMsgId;
+  const s = sessions[id];
 
-  if (mid) {
+  // Determine if content includes a photo
+  const isPhoto = content.photo || content.image;
+
+  // If there’s already a message saved, try to edit it
+  if (s.lastMsgId) {
     try {
-      await bot.editMessageText(text, {
-        chat_id: id,
-        message_id: mid,
-        ...opt
-      });
-      return;
-    } catch {
-      sessions[id].mainMsgId = null;
+      if (isPhoto) {
+        // Edit photo message
+        await bot.editMessageMedia(
+          {
+            type: 'photo',
+            media: content.photo || content.image,
+            caption: content.caption || content.text || '',
+            parse_mode: options.parse_mode || 'Markdown'
+          },
+          {
+            chat_id: id,
+            message_id: s.lastMsgId,
+            reply_markup: options.reply_markup
+          }
+        );
+      } else {
+        // Edit text message
+        await bot.editMessageText(content.text || '', {
+          chat_id: id,
+          message_id: s.lastMsgId,
+          parse_mode: options.parse_mode || 'Markdown',
+          reply_markup: options.reply_markup
+        });
+      }
+      return { message_id: s.lastMsgId };
+    } catch (err) {
+      // If editing fails (e.g., wrong type), send new message
+      s.lastMsgId = null;
     }
   }
 
-  const m = await bot.sendMessage(id, text, opt);
-  sessions[id].mainMsgId = m.message_id;
+  // No previous message or edit failed → send new
+  let msg;
+  if (isPhoto) {
+    msg = await bot.sendPhoto(id, content.photo || content.image, {
+      caption: content.caption || content.text || '',
+      parse_mode: options.parse_mode || 'Markdown',
+      reply_markup: options.reply_markup
+    });
+  } else {
+    msg = await bot.sendMessage(id, content.text || '', {
+      parse_mode: options.parse_mode || 'Markdown',
+      reply_markup: options.reply_markup
+    });
+  }
+
+  s.lastMsgId = msg.message_id;
+  return msg;
 }
 
 // ================= MAIN MENU =================
@@ -475,10 +515,110 @@ bot.on('callback_query', async q => {
       } else {
         await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
       }
-    } catch {
-      await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+// ================= HELPER =================
+function ensureUserMessageId(id) {
+  if (!sessions[id]) sessions[id] = {};
+  if (!sessions[id].lastMsgId) sessions[id].lastMsgId = null;
+}
+
+// ================= FULL PRODUCT FLOW =================
+bot.on('callback_query', async q => {
+  const id = q.message.chat.id;
+  ensureUser(id, q.from.username);
+  ensureUserMessageId(id);
+  const s = sessions[id];
+  if (!s) return;
+
+  // ===== Reload / Back / Product Selection =====
+  if (q.data === 'reload' || q.data.startsWith('product_')) {
+    if (!meta.storeOpen)
+      return bot.answerCallbackQuery(q.id, { text: 'Store is closed!', show_alert: true });
+
+    if (Date.now() - (s.lastClick || 0) < 30000)
+      return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
+
+    s.lastClick = Date.now();
+
+    s.product = q.data.replace('product_', s.product || '');
+    s.step = 'amount';
+    s.grams = null;
+    s.cash = null;
+    s.inputType = null;
+
+    const price = PRODUCTS[s.product].price;
+    let text = `🪴 *YOU HAVE CHOSEN*\n*${s.product}*\n\n💲 Price per gram: *$${price}*\n\n✏️ Send grams or $ amount`;
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
+          { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
+        ],
+        [{ text: '↩️ Back', callback_data: 'reload' }]
+      ]
+    };
+    const imageId = PRODUCT_IMAGES[s.product];
+
+    if (imageId) {
+      // Send a new photo if no last message or edit existing photo
+      if (s.lastMsgId) {
+        try {
+          await bot.editMessageMedia(
+            { type: 'photo', media: imageId, caption: text, parse_mode: 'Markdown' },
+            { chat_id: id, message_id: s.lastMsgId, reply_markup: keyboard }
+          );
+        } catch {
+          const msg = await bot.sendPhoto(id, imageId, { caption: text, parse_mode: 'Markdown', reply_markup: keyboard });
+          s.lastMsgId = msg.message_id;
+        }
+      } else {
+        const msg = await bot.sendPhoto(id, imageId, { caption: text, parse_mode: 'Markdown', reply_markup: keyboard });
+        s.lastMsgId = msg.message_id;
+      }
+    } else {
+      const msg = await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+      s.lastMsgId = msg.message_id;
     }
-    return;
+
+    return bot.answerCallbackQuery(q.id);
+  }
+
+  // ===== Select Input Type =====
+  if (q.data === 'amount_cash') s.inputType = 'cash';
+  if (q.data === 'amount_grams') s.inputType = 'grams';
+
+  if (q.data === 'amount_cash' || q.data === 'amount_grams') {
+    const price = PRODUCTS[s.product].price;
+    let text = `🪴 *YOU HAVE CHOSEN*\n*${s.product}*\n\n💲 Price per gram: *$${price}*`;
+    if (s.inputType === 'cash') text += `\n\n✏️ Send the $ amount you want to spend`;
+    if (s.inputType === 'grams') text += `\n\n✏️ Send the grams you want to buy`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
+          { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
+        ],
+        [{ text: '↩️ Back', callback_data: 'reload' }]
+      ]
+    };
+
+    const imageId = PRODUCT_IMAGES[s.product];
+    try {
+      if (imageId && s.lastMsgId) {
+        await bot.editMessageMedia(
+          { type: 'photo', media: imageId, caption: text, parse_mode: 'Markdown' },
+          { chat_id: id, message_id: s.lastMsgId, reply_markup: keyboard }
+        );
+      } else {
+        const msg = await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+        s.lastMsgId = msg.message_id;
+      }
+    } catch {
+      const msg = await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+      s.lastMsgId = msg.message_id;
+    }
+
+    return bot.answerCallbackQuery(q.id);
   }
 
   // ===== Confirm Order =====
@@ -490,21 +630,22 @@ bot.on('callback_query', async q => {
     users[id].orders.push({ product: s.product, grams: s.grams, cash: s.cash, status: 'Pending', time: Date.now() });
 
     const text = `✅ *ORDER CONFIRMED*\n\n🪴 Product: *${s.product}*\n⚖️ Grams: *${s.grams}g*\n💲 Total: *$${s.cash}*`;
-    const keyboard = {
-      inline_keyboard: [[{ text: '↩️ Back to Shop', callback_data: 'reload' }]]
-    };
+    const keyboard = { inline_keyboard: [[{ text: '↩️ Back to Shop', callback_data: 'reload' }]] };
     const imageId = PRODUCT_IMAGES[s.product];
+
     try {
-      if (imageId) {
+      if (imageId && s.lastMsgId) {
         await bot.editMessageMedia(
           { type: 'photo', media: imageId, caption: text, parse_mode: 'Markdown' },
-          { chat_id: id, message_id: q.message.message_id, reply_markup: keyboard }
+          { chat_id: id, message_id: s.lastMsgId, reply_markup: keyboard }
         );
       } else {
-        await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+        const msg = await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+        s.lastMsgId = msg.message_id;
       }
     } catch {
-      await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+      const msg = await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+      s.lastMsgId = msg.message_id;
     }
 
     // Reset session
@@ -518,7 +659,7 @@ bot.on('callback_query', async q => {
   }
 });
 
-// ================= HANDLE USER TEXT INPUT FOR AMOUNT (EDIT MAIN MENU) =================
+// ================= HANDLE USER TEXT INPUT FOR $ / GRAMS =================
 bot.on('message', async msg => {
   const id = msg.chat.id;
   const s = sessions[id];
@@ -529,8 +670,7 @@ bot.on('message', async msg => {
   let cash = null;
 
   const value = parseFloat(msg.text.replace(/[^0-9.]/g, ''));
-  if (isNaN(value) || value <= 0)
-    return bot.answerCallbackQuery(msg.id, { text: '❌ Invalid number, please try again', show_alert: true });
+  if (isNaN(value) || value <= 0) return; // ignore invalid input
 
   if (s.inputType === 'grams') {
     grams = value;
@@ -558,17 +698,12 @@ bot.on('message', async msg => {
   };
   const imageId = PRODUCT_IMAGES[s.product];
 
-  // Edit main menu message with order summary
+  // Edit the last bot message
   try {
-    if (imageId) {
+    if (imageId && s.lastMsgId) {
       await bot.editMessageMedia(
-        {
-          type: 'photo',
-          media: imageId,
-          caption: text,
-          parse_mode: 'Markdown'
-        },
-        { chat_id: id, message_id: msg.message_id - 1, reply_markup: keyboard }
+        { type: 'photo', media: imageId, caption: text, parse_mode: 'Markdown' },
+        { chat_id: id, message_id: s.lastMsgId, reply_markup: keyboard }
       );
     } else {
       await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
