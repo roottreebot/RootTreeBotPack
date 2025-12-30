@@ -1034,43 +1034,33 @@ bot.onText(/\/userprofile(?:\s+(.+))?/i, async (msg, match) => {
 // ================= PRODUCT INFO WITH IMAGE =================
 bot.on('message', async (msg) => {
   const id = msg.chat.id;
-  const textRaw = msg.text?.toLowerCase();
-
+  const textRaw = msg.text?.trim().toLowerCase();
   if (!textRaw) return;
 
+  let imageId, description;
+
   if (textRaw === '/spriteinfo') {
-    const text = `🪴 *Sprite Popperz*\n\nThis is a top-shelf strain with a sweet, fruity aroma and an uplifting effect. Perfect for daytime use and creative sessions.`;
-    const imageId = PRODUCT_IMAGES["Sprite Popperz"];
-
-    if (imageId) {
-      const sentMsg = await bot.sendPhoto(id, imageId, { caption: text, parse_mode: 'Markdown' });
-      setTimeout(() => {
-        try { bot.deleteMessage(id, sentMsg.message_id); } catch {}
-      }, 10000);
-    } else {
-      const sentMsg = await bot.sendMessage(id, text, { parse_mode: 'Markdown' });
-      setTimeout(() => {
-        try { bot.deleteMessage(id, sentMsg.message_id); } catch {}
-      }, 10000);
-    }
+    imageId = PRODUCT_IMAGES["Sprite Popperz"];
+    description = `🪴 *Sprite Popperz*\n\nThis is a top-shelf strain with a sweet, fruity aroma and an uplifting effect. Perfect for daytime use and creative sessions.`;
+  } else if (textRaw === '/kgbinfo') {
+    imageId = PRODUCT_IMAGES["Killer Green Budz"];
+    description = `🪴 *Killer Green Budz*\n\nA potent strain with a strong, relaxing effect. Known for its vivid green buds and intense flavor, ideal for evening relaxation.`;
+  } else {
+    return; // not a command we handle here
   }
 
-  if (textRaw === '/kgbinfo') {
-    const text = `🪴 *Killer Green Budz*\n\nA potent strain with a strong, relaxing effect. Known for its vivid green buds and intense flavor, ideal for evening relaxation.`;
-    const imageId = PRODUCT_IMAGES["Killer Green Budz"];
-
-    if (imageId) {
-      const sentMsg = await bot.sendPhoto(id, imageId, { caption: text, parse_mode: 'Markdown' });
-      setTimeout(() => {
-        try { bot.deleteMessage(id, sentMsg.message_id); } catch {}
-      }, 10000);
-    } else {
-      const sentMsg = await bot.sendMessage(id, text, { parse_mode: 'Markdown' });
-      setTimeout(() => {
-        try { bot.deleteMessage(id, sentMsg.message_id); } catch {}
-      }, 10000);
-    }
+  // Send product image + description
+  let sentMsg;
+  if (imageId) {
+    sentMsg = await bot.sendPhoto(id, imageId, { caption: description, parse_mode: 'Markdown' });
+  } else {
+    sentMsg = await bot.sendMessage(id, description, { parse_mode: 'Markdown' });
   }
+
+  // Auto-delete after 10 seconds
+  setTimeout(() => {
+    try { bot.deleteMessage(id, sentMsg.message_id); } catch {}
+  }, 10000);
 });
 
 // ================= /shop COMMAND =================
