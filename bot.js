@@ -419,9 +419,8 @@ if (q.data.startsWith('product_')) {
 
 ❗️*Note Anything Under 2 ($20) Will Be Auto Rejected*`;
 
-  // Send product selection message and save its ID
-  const sentProductMsg = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
-  s.productMsgId = sentProductMsg.message_id;
+  const sentMsg = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+  s.productMsgId = sentMsg.message_id;
 
   return;
 }
@@ -433,7 +432,6 @@ bot.on('message', async msg => {
   if (!s || !s.product || s.step !== 'amount' || !s.inputType || !s.productMsgId) return;
   if (!msg.text) return;
 
-  // Delete the user's text immediately
   try { await bot.deleteMessage(id, msg.message_id); } catch {}
 
   const raw = msg.text.trim();
@@ -450,18 +448,30 @@ bot.on('message', async msg => {
     s.cash = parseFloat((s.grams * price).toFixed(2));
   }
 
-  // Optional: perform your order logic here (save to DB, etc.)
+  s.step = 'confirm';
 
-  // Delete the product selection message automatically
-  try { await bot.deleteMessage(id, s.productMsgId); } catch {}
-  s.productMsgId = null;
+  const summaryText =
+`🪴 *ORDER SUMMARY*
+*${s.product}*
 
-  // Reset step after order
-  s.step = null;
-  s.product = null;
-  s.inputType = null;
-  s.grams = null;
-  s.cash = null;
+⚖️ Amount: *${s.grams}g*
+💲 Total: *$${s.cash}*`;
+
+  const summaryKeyboard = {
+    inline_keyboard: [
+      [
+        { text: '✅ Confirm Order', callback_data: 'confirm_order' },
+        { text: '↩️ Back', callback_data: 'reload' }
+      ]
+    ]
+  };
+
+  await bot.editMessageText(summaryText, {
+    chat_id: id,
+    message_id: s.productMsgId,
+    parse_mode: 'Markdown',
+    reply_markup: summaryKeyboard
+  });
 });
   
 // ================= AMOUNT TYPE =================
@@ -495,74 +505,48 @@ Please type your desired amount below.`;
     ]
   };
 
-  // Edit the existing product selection message
-  try {
-    await bot.editMessageText(text, {
-      chat_id: id,
-      message_id: s.productMsgId,
-      parse_mode: 'Markdown',
-      reply_markup: keyboard
-    });
-  } catch (err) {
-    console.error('Failed to edit product selection:', err);
-  }
+  await bot.editMessageText(text, {
+    chat_id: id,
+    message_id: s.productMsgId,
+    parse_mode: 'Markdown',
+    reply_markup: keyboard
+  });
 
   return bot.answerCallbackQuery(q.id);
 }
   
-  // ================= CONFIRM ORDER =================
+// ================= CONFIRM ORDER =================
+bot.on('callback_query', async q => {
+  const id = q.message.chat.id;
+  const s = sessions[id];
+
   if (q.data === 'confirm_order') {
-    if (!s.product || !s.grams || !s.cash) {
-      return bot.answerCallbackQuery(q.id, {
-        text: 'Enter amount first',
-        show_alert: true
-      });
+    if (!s || !s.product || !s.productMsgId) {
+      return bot.answerCallbackQuery(q.id, { text: 'No order to confirm', show_alert: true });
     }
 
-    const xp = Math.floor(2 + s.cash * 0.5);
-
-    const order = {
+    // Example: save the order here
+    users[id].orders.push({
       product: s.product,
       grams: s.grams,
       cash: s.cash,
-      status: 'Pending',
-      pendingXP: xp,
-      adminMsgs: []
-    };
+      status: 'Pending'
+    });
 
-    users[id].orders.push(order);
-    users[id].orders = users[id].orders.slice(-5);
-    saveAll();
+    // Delete the interactive message
+    try { await bot.deleteMessage(id, s.productMsgId); } catch {}
+    s.productMsgId = null;
 
-    s.step = null;
+    // Reset session
     s.product = null;
     s.inputType = null;
+    s.grams = null;
+    s.cash = null;
+    s.step = null;
 
-    // Notify admins
-    for (const admin of ADMIN_IDS) {
-      const m = await bot.sendMessage(
-        admin,
-`🧾 *NEW ORDER*
-User: @${users[id].username || id}
-Product: ${order.product}
-Grams: ${order.grams}g
-Price: $${order.cash}
-Status: ⚪ Pending`,
-        {
-          parse_mode: 'Markdown',
-          reply_markup: {
-            inline_keyboard: [[
-              { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
-              { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
-            ]]
-          }
-        }
-      );
-      order.adminMsgs.push({ admin, msgId: m.message_id });
-    }
-
-    return showMainMenu(id);
+    return bot.answerCallbackQuery(q.id, { text: 'Order confirmed!' });
   }
+});
 
   // ================= ADMIN ORDER HANDLING =================
   if (q.data.startsWith('admin_')) {
