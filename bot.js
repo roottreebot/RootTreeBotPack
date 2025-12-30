@@ -381,212 +381,124 @@ bot.on('callback_query', async q => {
     return showMainMenu(id);
   }
 
-// ================= FULL PRODUCT SELECTION FLOW =================
-bot.on('callback_query', async (q) => {
-  const id = q.message.chat.id;
-  ensureUser(id, q.from.username);
-  if (!sessions[id]) sessions[id] = {};
-  const s = sessions[id];
-
-  // ===== BACK / RELOAD MAIN MENU =====
-  if (q.data === 'reload') {
-    try { if (s.lastMsgId) await bot.deleteMessage(id, s.lastMsgId); } catch {}
-    s.lastMsgId = null;
-    s.step = null;
-    s.product = null;
-    s.grams = null;
-    s.cash = null;
-    s.inputType = null;
-
-    const keyboard = {
-      inline_keyboard: Object.keys(PRODUCTS).map(name => [{ text: name, callback_data: `product_${name}` }])
-    };
-    const text = '🛒 *Welcome to the Store!*\nSelect a product to start your order:';
-    const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-    s.lastMsgId = msg.message_id;
-
-    return bot.answerCallbackQuery(q.id);
-  }
-
-  // ================= PRODUCT SELECTION & INPUT FLOW =================
-bot.on('callback_query', async (q) => {
-  const id = q.message.chat.id;
-  ensureUser(id, q.from.username);
-  if (!sessions[id]) sessions[id] = {};
-  const s = sessions[id];
-
-  // ===== BACK / RELOAD MAIN MENU =====
-  if (q.data === 'reload') {
-    try { if (s.lastMsgId) await bot.deleteMessage(id, s.lastMsgId); } catch {}
-    s.lastMsgId = null;
-    s.step = null;
-    s.product = null;
-    s.grams = null;
-    s.cash = null;
-    s.inputType = null;
-
-    const keyboard = {
-      inline_keyboard: Object.keys(PRODUCTS).map(name => [{ text: name, callback_data: `product_${name}` }])
-    };
-    const text = '🛒 *Welcome to the Store!*\nSelect a product to start your order:';
-    const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-    s.lastMsgId = msg.message_id;
-
-    return bot.answerCallbackQuery(q.id);
-  }
-
-  // ===== PRODUCT SELECTION =====
+  // ================= PRODUCT SELECTION =================
   if (q.data.startsWith('product_')) {
-    if (!meta.storeOpen)
-      return bot.answerCallbackQuery(q.id, { text: 'Store is closed!', show_alert: true });
+    if (!meta.storeOpen) {
+      return bot.answerCallbackQuery(q.id, {
+        text: 'Store is closed',
+        show_alert: true
+      });
+    }
 
-    if (Date.now() - (s.lastClick || 0) < 30000)
-      return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
-
-    s.lastClick = Date.now();
-
-    const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
-    if (pendingCount >= 2)
-      return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
-
-    try { if (s.lastMsgId) await bot.deleteMessage(id, s.lastMsgId); } catch {}
-    s.lastMsgId = null;
+    const pending = users[id].orders.filter(o => o.status === 'Pending').length;
+    if (pending >= 2) {
+      return bot.answerCallbackQuery(q.id, {
+        text: 'You already have 2 pending orders',
+        show_alert: true
+      });
+    }
 
     s.product = q.data.replace('product_', '');
-    s.step = 'amount';
+    s.step = 'choose_amount';
+    s.inputType = null;
     s.grams = null;
     s.cash = null;
-    s.inputType = null;
 
     const price = PRODUCTS[s.product].price;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
+          { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
+        ],
+        [
+          { text: '↩️ Back', callback_data: 'reload' }
+        ]
+      ]
+    };
+
     const text =
 `🪴 *YOU HAVE CHOSEN*
 *${s.product}*
 
 💲 Price per gram: *$${price}*
+Choose how you want to enter the amount`;
 
-✏️ Send grams or $ amount`;
+    await sendOrEdit(id, text, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
 
-    const keyboard = {
-      inline_keyboard: [
-        [
-          { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
-          { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
-        ],
-        [
-          { text: '↩️ Back', callback_data: 'reload' }
-        ]
-      ]
-    };
-
-    const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-    s.lastMsgId = msg.message_id;
-
-    return bot.answerCallbackQuery(q.id);
+    return;
   }
 
-  // ===== INPUT TYPE SELECTION =====
-  if (q.data === 'amount_cash') s.inputType = 'cash';
-  if (q.data === 'amount_grams') s.inputType = 'grams';
-
-  if (q.data === 'amount_cash' || q.data === 'amount_grams') {
-    if (!s.product) return bot.answerCallbackQuery(q.id, { text: 'Please select a product first', show_alert: true });
-
-    const price = PRODUCTS[s.product].price;
-    let text = `🪴 *YOU HAVE CHOSEN*\n*${s.product}*\n\n💲 Price per gram: *$${price}*`;
-    text += s.inputType === 'cash' ? `\n\n✏️ Send the $ amount you want to spend` : `\n\n✏️ Send the grams you want to buy`;
-
-    const keyboard = {
-      inline_keyboard: [
-        [
-          { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
-          { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
-        ],
-        [
-          { text: '↩️ Back', callback_data: 'reload' }
-        ]
-      ]
-    };
-
-    try {
-      await bot.editMessageText(text, { chat_id: id, message_id: s.lastMsgId, parse_mode: 'Markdown', reply_markup: keyboard });
-    } catch {
-      const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-      s.lastMsgId = msg.message_id;
-    }
-
-    return bot.answerCallbackQuery(q.id);
+  // ================= AMOUNT TYPE =================
+  if (q.data === 'amount_cash') {
+    s.step = 'amount';
+    s.inputType = 'cash';
+    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send $ Amount Waiting For Your Input!' });
   }
 
-  // ===== CONFIRM ORDER =====
+  if (q.data === 'amount_grams') {
+    s.step = 'amount';
+    s.inputType = 'grams';
+    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send Grams Waiting For Your Input!' });
+  }
+
+  // ================= CONFIRM ORDER =================
   if (q.data === 'confirm_order') {
-    if (!s.grams || !s.cash)
-      return bot.answerCallbackQuery(q.id, { text: 'No order to confirm!', show_alert: true });
-
-    users[id].orders.push({ product: s.product, grams: s.grams, cash: s.cash, status: 'Pending', time: Date.now() });
-
-    const text = `✅ *ORDER CONFIRMED*\n\n🪴 Product: *${s.product}*\n⚖️ Grams: *${s.grams}g*\n💲 Total: *$${s.cash}*`;
-    const keyboard = { inline_keyboard: [[{ text: '↩️ Back to Shop', callback_data: 'reload' }]] };
-
-    try {
-      await bot.editMessageText(text, { chat_id: id, message_id: s.lastMsgId, parse_mode: 'Markdown', reply_markup: keyboard });
-    } catch {
-      const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-      s.lastMsgId = msg.message_id;
+    if (!s.product || !s.grams || !s.cash) {
+      return bot.answerCallbackQuery(q.id, {
+        text: 'Enter amount first',
+        show_alert: true
+      });
     }
 
-    // Reset session
+    const xp = Math.floor(2 + s.cash * 0.5);
+
+    const order = {
+      product: s.product,
+      grams: s.grams,
+      cash: s.cash,
+      status: 'Pending',
+      pendingXP: xp,
+      adminMsgs: []
+    };
+
+    users[id].orders.push(order);
+    users[id].orders = users[id].orders.slice(-5);
+    saveAll();
+
     s.step = null;
     s.product = null;
-    s.grams = null;
-    s.cash = null;
     s.inputType = null;
 
-    return bot.answerCallbackQuery(q.id, { text: 'Order confirmed!' });
+    // Notify admins
+    for (const admin of ADMIN_IDS) {
+      const m = await bot.sendMessage(
+        admin,
+`🧾 *NEW ORDER*
+User: @${users[id].username || id}
+Product: ${order.product}
+Grams: ${order.grams}g
+Price: $${order.cash}
+Status: ⚪ Pending`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '✅ Accept', callback_data: `admin_accept_${id}_${users[id].orders.length - 1}` },
+              { text: '❌ Reject', callback_data: `admin_reject_${id}_${users[id].orders.length - 1}` }
+            ]]
+          }
+        }
+      );
+      order.adminMsgs.push({ admin, msgId: m.message_id });
+    }
+
+    return showMainMenu(id);
   }
-});
-
-// ================= HANDLE USER TEXT INPUT =================
-bot.on('message', async (msg) => {
-  const id = msg.chat.id;
-  const s = sessions[id];
-  if (!s || s.step !== 'amount') return;
-
-  const value = parseFloat(msg.text.replace(/[^0-9.]/g, ''));
-  if (isNaN(value) || value <= 0) return;
-
-  const price = PRODUCTS[s.product].price;
-
-  if (s.inputType === 'grams') {
-    s.grams = value;
-    s.cash = parseFloat((s.grams * price).toFixed(2));
-  } else if (s.inputType === 'cash') {
-    s.cash = value;
-    s.grams = parseFloat((s.cash / price).toFixed(2));
-  } else {
-    s.grams = value;
-    s.cash = parseFloat((s.grams * price).toFixed(2));
-  }
-
-  s.step = 'confirm';
-
-  const text = `✅ *ORDER SUMMARY*\n\n🪴 Product: *${s.product}*\n⚖️ Grams: *${s.grams}g*\n💲 Total: *$${s.cash}*`;
-  const keyboard = {
-    inline_keyboard: [
-      [
-        { text: '✅ Confirm', callback_data: 'confirm_order' },
-        { text: '↩️ Back', callback_data: 'product_' + s.product }
-      ]
-    ]
-  };
-
-  try {
-    await bot.editMessageText(text, { chat_id: id, message_id: s.lastMsgId, parse_mode: 'Markdown', reply_markup: keyboard });
-  } catch {
-    const msgSent = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-    s.lastMsgId = msgSent.message_id;
-  }
-});
 
   // ================= ADMIN ORDER HANDLING =================
   if (q.data.startsWith('admin_')) {
