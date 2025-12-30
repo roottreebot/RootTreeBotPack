@@ -2010,6 +2010,71 @@ bot.onText(/\/broadcast (.+)/, async (msg, match) => {
   );
 });
 
+// ================= CLEAN AMOUNT INPUT HANDLER (FINAL) =================
+bot.on('message', async msg => {
+  const id = msg.chat.id;
+  const s = sessions[id];
+
+  ensureUser(id, msg.from.username);
+
+  // Only listen when waiting for amount input
+  if (!s || s.step !== 'amount' || !s.product) {
+    // Auto-delete normal user messages to keep chat clean
+    if (!msg.from.is_bot) {
+      setTimeout(() => {
+        bot.deleteMessage(id, msg.message_id).catch(() => {});
+      }, 1500);
+    }
+    return;
+  }
+
+  if (!msg.text) return;
+
+  // Delete amount input immediately
+  bot.deleteMessage(id, msg.message_id).catch(() => {});
+
+  const price = PRODUCTS[s.product]?.price;
+  if (!price) return;
+
+  const text = msg.text.trim();
+  const value = parseFloat(
+    text.replace(',', '.').replace(/[^0-9.]/g, '')
+  );
+
+  if (isNaN(value) || value <= 0) return;
+
+  // 🔥 THIS IS THE MISSING CASH / GRAMS LOGIC 🔥
+  if (s.inputType === 'cash') {
+    s.cash = parseFloat(value.toFixed(2));
+    s.grams = parseFloat((s.cash / price).toFixed(2));
+  } else {
+    s.grams = parseFloat(value.toFixed(2));
+    s.cash = parseFloat((s.grams * price).toFixed(2));
+  }
+
+  const confirmText =
+`🪴 *ORDER SUMMARY*
+*${s.product}*
+
+⚖️ Amount: *${s.grams}g*
+💲 Total: *$${s.cash}*
+
+Press ✅ Confirm Order`;
+
+  await sendOrEdit(id, confirmText, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: '✅ Confirm Order', callback_data: 'confirm_order' }],
+        [{ text: '↩️ Back', callback_data: 'reload' }]
+      ]
+    }
+  });
+
+  // Lock input so user can’t send another amount accidentally
+  s.step = 'confirm';
+});
+
 // ================= EXPORT/IMPORT DB =================
 bot.onText(/\/exportdb/, msg => {
   const id = msg.chat.id;
