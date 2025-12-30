@@ -252,66 +252,26 @@ function getLeaderboard(page = 0) {
   return { text, buttons };
 }
 
-// ================= SEND OR EDIT (TEXT OR PHOTO) =================
-async function sendOrEdit(id, content, options = {}) {
-  // Ensure session exists
+// ================= SEND/EDIT MAIN MENU =================
+async function sendOrEdit(id, text, opt = {}) {
   if (!sessions[id]) sessions[id] = {};
-  const s = sessions[id];
+  const mid = sessions[id].mainMsgId;
 
-  // Determine if content includes a photo
-  const isPhoto = content.photo || content.image;
-
-  // If there’s already a message saved, try to edit it
-  if (s.lastMsgId) {
+  if (mid) {
     try {
-      if (isPhoto) {
-        // Edit photo message
-        await bot.editMessageMedia(
-          {
-            type: 'photo',
-            media: content.photo || content.image,
-            caption: content.caption || content.text || '',
-            parse_mode: options.parse_mode || 'Markdown'
-          },
-          {
-            chat_id: id,
-            message_id: s.lastMsgId,
-            reply_markup: options.reply_markup
-          }
-        );
-      } else {
-        // Edit text message
-        await bot.editMessageText(content.text || '', {
-          chat_id: id,
-          message_id: s.lastMsgId,
-          parse_mode: options.parse_mode || 'Markdown',
-          reply_markup: options.reply_markup
-        });
-      }
-      return { message_id: s.lastMsgId };
-    } catch (err) {
-      // If editing fails (e.g., wrong type), send new message
-      s.lastMsgId = null;
+      await bot.editMessageText(text, {
+        chat_id: id,
+        message_id: mid,
+        ...opt
+      });
+      return;
+    } catch {
+      sessions[id].mainMsgId = null;
     }
   }
 
-  // No previous message or edit failed → send new
-  let msg;
-  if (isPhoto) {
-    msg = await bot.sendPhoto(id, content.photo || content.image, {
-      caption: content.caption || content.text || '',
-      parse_mode: options.parse_mode || 'Markdown',
-      reply_markup: options.reply_markup
-    });
-  } else {
-    msg = await bot.sendMessage(id, content.text || '', {
-      parse_mode: options.parse_mode || 'Markdown',
-      reply_markup: options.reply_markup
-    });
-  }
-
-  s.lastMsgId = msg.message_id;
-  return msg;
+  const m = await bot.sendMessage(id, text, opt);
+  sessions[id].mainMsgId = m.message_id;
 }
 
 // ================= MAIN MENU =================
