@@ -435,18 +435,57 @@ bot.on('callback_query', async q => {
     return;
   }
 
-  // ================= AMOUNT TYPE =================
-  if (q.data === 'amount_cash') {
-    s.step = 'amount';
-    s.inputType = 'cash';
-    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send $ Amount Waiting For Your Input!' });
+// ================= AMOUNT TYPE =================
+if (q.data === 'amount_cash' || q.data === 'amount_grams') {
+  if (!s.product) return bot.answerCallbackQuery(q.id, { text: 'Please select a product first', show_alert: true });
+
+  s.step = 'amount';
+  s.inputType = q.data === 'amount_cash' ? 'cash' : 'grams';
+
+  const price = PRODUCTS[s.product].price;
+  const text =
+`🪴 *YOU HAVE CHOSEN*
+*${s.product}*
+
+💲 Price per gram: *$${price}*
+
+✏️ You have chosen to enter ${s.inputType === 'cash' ? '$ Amount' : 'Grams'}.
+Please type your desired amount below.`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
+        { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
+      ],
+      [
+        { text: '↩️ Back', callback_data: 'reload' }
+      ]
+    ]
+  };
+
+  if (s.lastMsgId) {
+    // EDIT the original main menu/product message
+    try {
+      await bot.editMessageText(text, {
+        chat_id: id,
+        message_id: s.lastMsgId,
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
+    } catch {
+      // fallback if edit fails
+      const msgSent = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+      s.lastMsgId = msgSent.message_id;
+    }
+  } else {
+    // If lastMsgId is missing, send new message and save its ID
+    const msgSent = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+    s.lastMsgId = msgSent.message_id;
   }
 
-  if (q.data === 'amount_grams') {
-    s.step = 'amount';
-    s.inputType = 'grams';
-    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send Grams Waiting For Your Input!' });
-  }
+  return bot.answerCallbackQuery(q.id);
+}
 
   // ================= CONFIRM ORDER =================
   if (q.data === 'confirm_order') {
