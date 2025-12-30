@@ -383,14 +383,10 @@ bot.on('callback_query', async q => {
 
   // ================= PRODUCT SELECTION =================
 if (q.data.startsWith('product_')) {
-  if (!meta.storeOpen) {
-    return bot.answerCallbackQuery(q.id, { text: 'Store is closed', show_alert: true });
-  }
+  if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed', show_alert: true });
 
   const pending = users[id].orders.filter(o => o.status === 'Pending').length;
-  if (pending >= 2) {
-    return bot.answerCallbackQuery(q.id, { text: 'You already have 2 pending orders', show_alert: true });
-  }
+  if (pending >= 2) return bot.answerCallbackQuery(q.id, { text: 'You already have 2 pending orders', show_alert: true });
 
   s.product = q.data.replace('product_', '');
   s.step = 'choose_amount';
@@ -421,12 +417,8 @@ if (q.data.startsWith('product_')) {
 
 ❗️*Note Anything Under 2 ($20) Will Be Auto Rejected*`;
 
-  // send message and save its ID
-  const msg = await sendOrEdit(id, text, {
-    parse_mode: 'Markdown',
-    reply_markup: keyboard
-  });
-  s.lastMsgId = msg.message_id; // save the message ID here
+  const msg = await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+  s.lastMsgId = msg?.message_id; // now this is set correctly
 
   return;
 }
@@ -462,7 +454,6 @@ Please type your desired amount below.`;
     ]
   };
 
-  // EDIT the existing "YOU HAVE CHOSEN" message
   try {
     await bot.editMessageText(text, {
       chat_id: id,
@@ -472,9 +463,6 @@ Please type your desired amount below.`;
     });
   } catch (err) {
     console.error('Failed to edit message:', err);
-    // fallback if edit fails
-    const msgSent = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
-    s.lastMsgId = msgSent.message_id;
   }
 
   return bot.answerCallbackQuery(q.id);
