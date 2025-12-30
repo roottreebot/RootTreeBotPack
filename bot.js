@@ -349,81 +349,58 @@ bot.onText(/\/start|\/help/, async msg => {
   await showMainMenu(msg.chat.id, 0);
 });
 
-// ================= CALLBACKS =================
-bot.on('callback_query', async q => {
+// ================= PRODUCT SELECTION & INPUT FLOW =================
+bot.on('callback_query', async (q) => {
   const id = q.message.chat.id;
   ensureUser(id, q.from.username);
-  const s = sessions[id] || (sessions[id] = {});
-  await bot.answerCallbackQuery(q.id).catch(() => {});
+  if (!sessions[id]) sessions[id] = {};
+  const s = sessions[id];
 
-  if (q.data === 'clearpending_confirm') {
-    if (!ADMIN_IDS.includes(id)) return;
+  // ===== BACK / RELOAD MAIN MENU =====
+  if (q.data === 'reload') {
+    try { if (s.lastMsgId) await bot.deleteMessage(id, s.lastMsgId); } catch {}
+    s.lastMsgId = null;
+    s.step = null;
+    s.product = null;
+    s.grams = null;
+    s.cash = null;
+    s.inputType = null;
 
-    let cleared = 0;
+    const keyboard = {
+      inline_keyboard: Object.keys(PRODUCTS).map(name => [{ text: name, callback_data: `product_${name}` }])
+    };
+    const text = '🛒 *Welcome to the Store!*\nSelect a product to start your order:';
+    const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
+    s.lastMsgId = msg.message_id;
 
-    for (const uid of Object.keys(users)) {
-      if (!users[uid].orders) continue;
-
-      const before = users[uid].orders.length;
-      users[uid].orders = users[uid].orders.filter(
-        o => o.status !== 'Pending'
-      );
-      cleared += before - users[uid].orders.length;
-    }
-
-    saveAll();
-
-    return bot.editMessageText(
-      `✅ Cleared ${cleared} pending orders.`,
-      {
-        chat_id: id,
-        message_id: q.message.message_id
-      }
-    );
+    return bot.answerCallbackQuery(q.id);
   }
 
-  if (q.data === 'clearpending_cancel') {
-    return bot.editMessageText(
-      '❌ Clear pending cancelled.',
-      {
-        chat_id: id,
-        message_id: q.message.message_id
-      }
-    );
-  }
+  // ===== PRODUCT SELECTION =====
+  if (q.data.startsWith('product_')) {
+    if (!meta.storeOpen)
+      return bot.answerCallbackQuery(q.id, { text: 'Store is closed!', show_alert: true });
 
-  if (q.data === 'reload') return showMainMenu(id);
-  if (q.data.startsWith('lb_')) return showMainMenu(id, Math.max(0, Number(q.data.split('_')[1])));
+    if (Date.now() - (s.lastClick || 0) < 30000)
+      return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
 
-  if (q.data === 'store_open' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = true; saveAll(); return showMainMenu(id);
-  }
-  if (q.data === 'store_close' && ADMIN_IDS.includes(id)) {
-    meta.storeOpen = false; saveAll(); return showMainMenu(id);
-  }
+    s.lastClick = Date.now();
 
-  // ================= PRODUCT SELECTION =================
-if (q.data.startsWith('product_')) {
-  if (!meta.storeOpen)
-    return bot.answerCallbackQuery(q.id, { text: 'Store is closed!', show_alert: true });
+    const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
+    if (pendingCount >= 2)
+      return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
 
-  if (Date.now() - (s.lastClick || 0) < 30000)
-    return bot.answerCallbackQuery(q.id, { text: 'Please wait before clicking again', show_alert: true });
+    try { if (s.lastMsgId) await bot.deleteMessage(id, s.lastMsgId); } catch {}
+    s.lastMsgId = null;
 
-  s.lastClick = Date.now();
+    s.product = q.data.replace('product_', '');
+    s.step = 'amount';
+    s.grams = null;
+    s.cash = null;
+    s.inputType = null;
 
-  const pendingCount = users[id].orders.filter(o => o.status === 'Pending').length;
-  if (pendingCount >= 2)
-    return bot.answerCallbackQuery(q.id, { text: '❌ You already have 2 pending orders!', show_alert: true });
-
-  s.product = q.data.replace('product_', '');
-  s.step = 'amount';
-  s.grams = null;
-  s.cash = null;
-
-  const price = PRODUCTS[s.product].price;
-
-  const text =
+    const price = PRODUCTS[s.product].price;
+    const text =
 `🪴 *YOU HAVE CHOSEN*
 *${s.product}*
 
@@ -431,32 +408,31 @@ if (q.data.startsWith('product_')) {
 
 ✏️ Send grams or $ amount`;
 
-  const keyboard = {
-    inline_keyboard: [
-      [
-        { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
-        { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
-      ],
-      [
-        { text: '↩️ Back', callback_data: 'reload' }
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
+          { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
+        ],
+        [
+          { text: '↩️ Back', callback_data: 'reload' }
+        ]
       ]
-    ]
-  };
+    };
 
-  // ALWAYS edit TEXT — never caption
-  await sendOrEdit(id, text, {
-    parse_mode: 'Markdown',
-    reply_markup: keyboard
-  });
+    const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
+    s.lastMsgId = msg.message_id;
 
-  return;
-}
+    return bot.answerCallbackQuery(q.id);
+  }
 
-  // ===== INPUT TYPE SELECT =====
+  // ===== INPUT TYPE SELECTION =====
   if (q.data === 'amount_cash') s.inputType = 'cash';
   if (q.data === 'amount_grams') s.inputType = 'grams';
 
   if (q.data === 'amount_cash' || q.data === 'amount_grams') {
+    if (!s.product) return bot.answerCallbackQuery(q.id, { text: 'Please select a product first', show_alert: true });
+
     const price = PRODUCTS[s.product].price;
     let text = `🪴 *YOU HAVE CHOSEN*\n*${s.product}*\n\n💲 Price per gram: *$${price}*`;
     text += s.inputType === 'cash' ? `\n\n✏️ Send the $ amount you want to spend` : `\n\n✏️ Send the grams you want to buy`;
@@ -467,22 +443,17 @@ if (q.data.startsWith('product_')) {
           { text: '💵 Enter $ Amount', callback_data: 'amount_cash' },
           { text: '⚖️ Enter Grams', callback_data: 'amount_grams' }
         ],
-        [{ text: '↩️ Back', callback_data: 'reload' }]
+        [
+          { text: '↩️ Back', callback_data: 'reload' }
+        ]
       ]
     };
 
-    const imageId = PRODUCT_IMAGES[s.product];
-    if (imageId && s.lastMsgId) {
-      try {
-        await bot.editMessageMedia(
-          { type: 'photo', media: imageId, caption: text, parse_mode: 'Markdown' },
-          { chat_id: id, message_id: s.lastMsgId, reply_markup: keyboard }
-        );
-      } catch {
-        await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-      }
-    } else {
-      await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
+    try {
+      await bot.editMessageText(text, { chat_id: id, message_id: s.lastMsgId, parse_mode: 'Markdown', reply_markup: keyboard });
+    } catch {
+      const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
+      s.lastMsgId = msg.message_id;
     }
 
     return bot.answerCallbackQuery(q.id);
@@ -497,21 +468,15 @@ if (q.data.startsWith('product_')) {
 
     const text = `✅ *ORDER CONFIRMED*\n\n🪴 Product: *${s.product}*\n⚖️ Grams: *${s.grams}g*\n💲 Total: *$${s.cash}*`;
     const keyboard = { inline_keyboard: [[{ text: '↩️ Back to Shop', callback_data: 'reload' }]] };
-    const imageId = PRODUCT_IMAGES[s.product];
 
-    if (imageId && s.lastMsgId) {
-      try {
-        await bot.editMessageMedia(
-          { type: 'photo', media: imageId, caption: text, parse_mode: 'Markdown' },
-          { chat_id: id, message_id: s.lastMsgId, reply_markup: keyboard }
-        );
-      } catch {
-        await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-      }
-    } else {
-      await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
+    try {
+      await bot.editMessageText(text, { chat_id: id, message_id: s.lastMsgId, parse_mode: 'Markdown', reply_markup: keyboard });
+    } catch {
+      const msg = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
+      s.lastMsgId = msg.message_id;
     }
 
+    // Reset session
     s.step = null;
     s.product = null;
     s.grams = null;
@@ -523,34 +488,30 @@ if (q.data.startsWith('product_')) {
 });
 
 // ================= HANDLE USER TEXT INPUT =================
-bot.on('message', async msg => {
+bot.on('message', async (msg) => {
   const id = msg.chat.id;
   const s = sessions[id];
   if (!s || s.step !== 'amount') return;
 
-  const price = PRODUCTS[s.product].price;
-  let grams = null;
-  let cash = null;
-
   const value = parseFloat(msg.text.replace(/[^0-9.]/g, ''));
   if (isNaN(value) || value <= 0) return;
 
+  const price = PRODUCTS[s.product].price;
+
   if (s.inputType === 'grams') {
-    grams = value;
-    cash = parseFloat((grams * price).toFixed(2));
+    s.grams = value;
+    s.cash = parseFloat((s.grams * price).toFixed(2));
   } else if (s.inputType === 'cash') {
-    cash = value;
-    grams = parseFloat((cash / price).toFixed(2));
+    s.cash = value;
+    s.grams = parseFloat((s.cash / price).toFixed(2));
   } else {
-    grams = value;
-    cash = parseFloat((grams * price).toFixed(2));
+    s.grams = value;
+    s.cash = parseFloat((s.grams * price).toFixed(2));
   }
 
-  s.grams = grams;
-  s.cash = cash;
   s.step = 'confirm';
 
-  const text = `✅ *ORDER SUMMARY*\n\n🪴 Product: *${s.product}*\n⚖️ Grams: *${grams}g*\n💲 Total: *$${cash}*`;
+  const text = `✅ *ORDER SUMMARY*\n\n🪴 Product: *${s.product}*\n⚖️ Grams: *${s.grams}g*\n💲 Total: *$${s.cash}*`;
   const keyboard = {
     inline_keyboard: [
       [
@@ -559,66 +520,13 @@ bot.on('message', async msg => {
       ]
     ]
   };
-  const imageId = PRODUCT_IMAGES[s.product];
 
-  if (imageId && s.lastMsgId) {
-    try {
-      await bot.editMessageMedia(
-        { type: 'photo', media: imageId, caption: text, parse_mode: 'Markdown' },
-        { chat_id: id, message_id: s.lastMsgId, reply_markup: keyboard }
-      );
-    } catch {
-      await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
-    }
-  } else {
-    await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
+  try {
+    await bot.editMessageText(text, { chat_id: id, message_id: s.lastMsgId, parse_mode: 'Markdown', reply_markup: keyboard });
+  } catch {
+    const msgSent = await sendOrEdit(id, { text, parse_mode: 'Markdown', reply_markup: keyboard });
+    s.lastMsgId = msgSent.message_id;
   }
-});
-
-// ================= USER INPUT =================
-bot.on('message', msg => {
-  const id = msg.chat.id;
-  ensureUser(id, msg.from.username);
-
-  if (!msg.from.is_bot) setTimeout(() => bot.deleteMessage(id, msg.message_id).catch(() => {}), 2000);
-
-  const s = sessions[id];
-  if (!s || s.step !== 'amount') return;
-
-  const text = msg.text?.trim();
-  if (!text) return;
-
-  const price = PRODUCTS[s.product].price;
-  let grams, cash;
-  if (text.startsWith('$')) {
-    cash = parseFloat(text.slice(1));
-    grams = +(cash / price).toFixed(1);
-  } else {
-    grams = Math.round(parseFloat(text) * 2) / 2;
-    cash = +(grams * price).toFixed(2);
-  }
-
-  if (!grams || grams < 2) return;
-
-  s.grams = grams;
-  s.cash = cash;
-
-  sendOrEdit(
-    id,
-`🧾 *Order Summary*
-🌿 *${s.product}*
-⚖️ ${grams}g
-💲 $${cash}`,
-    {
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: '✅ Confirm', callback_data: 'confirm_order' }],
-          [{ text: '🏠 Back to Menu', callback_data: 'reload' }]
-        ]
-      },
-      parse_mode: 'Markdown'
-    }
-  );
 });
 
 // ================= ADMIN COMMANDS =================
