@@ -390,29 +390,6 @@ if (q.data.startsWith('product_')) {
   s.cash = null;
 
   const price = PRODUCTS[s.product].price;
-
-  // Get product image from PRODUCT_IMAGES
-  const imageId = PRODUCT_IMAGES[s.product];
-
-  if (imageId) {
-    // Send or edit the message with photo + caption
-    await sendOrEdit(id, {
-      photo: imageId,
-      caption: text,
-      parse_mode: 'Markdown',
-      reply_markup: keyboard
-    });
-  } else {
-    // No image → just edit text
-    await sendOrEdit(id, {
-      text: text,
-      parse_mode: 'Markdown',
-      reply_markup: keyboard
-    });
-  }
-
-  return;
-}
   
   const text =
 `🪴 *YOU HAVE CHOSEN*
@@ -443,6 +420,29 @@ if (q.data.startsWith('product_')) {
   return;
 }
 
+ // Get product image from PRODUCT_IMAGES
+  const imageId = PRODUCT_IMAGES[s.product];
+
+  if (imageId) {
+    // Send or edit the message with photo + caption
+    await sendOrEdit(id, {
+      photo: imageId,
+      caption: text,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  } else {
+    // No image → just edit text
+    await sendOrEdit(id, {
+      text: text,
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+
+  return;
+}
+  
   if (q.data === 'confirm_order') {
     if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed! Cannot confirm order.', show_alert: true });
 
