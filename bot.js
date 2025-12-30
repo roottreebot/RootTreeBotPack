@@ -391,6 +391,9 @@ if (q.data.startsWith('product_')) {
 
   const price = PRODUCTS[s.product].price;
 
+  // Get product image from PRODUCT_IMAGES
+  const imageId = PRODUCT_IMAGES[s.product];
+  
   const text =
 `🪴 *YOU HAVE CHOSEN*
 *${s.product}*
