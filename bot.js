@@ -427,7 +427,7 @@ if (q.data.startsWith('product_')) {
 
 ❗️*Note Anything Under 2 ($20) Will Be Auto Rejected*`;
 
-  // send menu and save message_id for editing later
+  // Send menu and store message ID for future edits
   const msg = await sendOrEdit(id, text, {
     parse_mode: 'Markdown',
     reply_markup: keyboard
@@ -439,7 +439,7 @@ if (q.data.startsWith('product_')) {
 // ================= AMOUNT TYPE CALLBACK =================
 if (q.data === 'amount_cash' || q.data === 'amount_grams') {
   s.inputType = q.data === 'amount_cash' ? 'cash' : 'grams';
-  s.step = 'choose_amount'; // keep compatible with message handler
+  s.step = 'choose_amount'; // keep consistent for message handler
 
   const choiceText = s.inputType === 'cash'
     ? '💵 Enter $ Amount'
@@ -474,6 +474,7 @@ bot.on('message', async (msg) => {
 
   const price = PRODUCTS[s.product].price;
 
+  // Calculate grams and cash based on input type
   if (s.inputType === 'grams') {
     if (value < 2) return; // minimum grams
     s.grams = value;
@@ -504,6 +505,7 @@ Press ✅ Confirm Order`;
     ]
   };
 
+  // Edit the original "YOU HAVE CHOSEN" message
   try {
     await bot.editMessageText(text, {
       chat_id: id,
@@ -513,7 +515,6 @@ Press ✅ Confirm Order`;
     });
   } catch (err) {
     console.error('Failed to edit YOU HAVE CHOSEN:', err);
-    // fallback: send a new message and store message_id
     const fallbackMsg = await bot.sendMessage(id, text, {
       parse_mode: 'Markdown',
       reply_markup: keyboard
@@ -521,7 +522,7 @@ Press ✅ Confirm Order`;
     s.mainMsgId = fallbackMsg.message_id;
   }
 
-  // delete user input for clean UI
+  // Delete user input for cleaner UI
   try { await bot.deleteMessage(id, msg.message_id); } catch {}
 });
   
