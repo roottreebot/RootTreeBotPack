@@ -252,7 +252,7 @@ function getLeaderboard(page = 0) {
   const slice = list.slice(page * lbSize, page * lbSize + lbSize);
 
   let text = `*📊 Weekly Leaderboard*\n`;
-  let text = `*Want To Go Private?* /wlprivate & /wlon\n`;
+  let text = `*Want To Go Private?* /wlprivate & /wlon\n`
   slice.forEach(([id, u], i) => {
     const name = u.privateWL
       ? '👤 Private User'
