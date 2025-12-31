@@ -329,19 +329,23 @@ await sendOrEdit(
 `${storeStatus}
 
 📊 *LEVEL SYSTEM*
+——————————————————
    *Buy Role /shop & /buy* 
 👑 *Highest Role*: *${highestRole}*
 🎚 Level: *${u.level}*
 📊 *XP*: ${xpBar(u.xp, u.level)}
 
 📦 *YOUR ORDERS* (*LAST 5*)
+————————————————————————————
 ${orders}
 
 🌟 *EXTRA*
+———————————
 ${streakText(u)}
 ${lotteryLine}
 
 📦 *PRODUCT*
+—————————————
 🥤 *Sprite Popperz* - *Info* /spritepop
 🍃 *Killer Green Budz* - *Info* /killergb
 
