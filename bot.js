@@ -435,18 +435,34 @@ bot.on('callback_query', async q => {
     return;
   }
 
-  // ================= AMOUNT TYPE =================
-  if (q.data === 'amount_cash') {
-    s.step = 'amount';
-    s.inputType = 'cash';
-    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send $ Amount Waiting For Your Input!' });
-  }
+  // ================= AMOUNT TYPE SELECTION =================
+if (q.data === 'amount_cash' || q.data === 'amount_grams') {
+  if (!users[id].session) users[id].session = sessions[id];
+  const s = users[id].session;
 
-  if (q.data === 'amount_grams') {
-    s.step = 'amount';
-    s.inputType = 'grams';
-    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send Grams Waiting For Your Input!' });
-  }
+  // store input type and step
+  s.inputType = q.data === 'amount_cash' ? 'cash' : 'grams';
+  s.step = 'amount'; // matches your simpler flow
+
+  const choiceText = s.inputType === 'cash' ? '💵 Enter $ Amount' : '⚖️ Enter Grams';
+
+  // send temporary 3-second message
+  const tempMsg = await bot.sendMessage(
+    id,
+    `✅ *You Chose:* ${choiceText}\n⌨️ *Waiting For Your Input...*`,
+    { parse_mode: 'Markdown' }
+  );
+
+  // auto delete temporary message
+  setTimeout(() => {
+    bot.deleteMessage(id, tempMsg.message_id).catch(() => {});
+  }, 3000);
+
+  // show inline feedback immediately (removes loading animation)
+  await bot.answerCallbackQuery(q.id, { text: `You Chose: ${choiceText}`, show_alert: false });
+
+  return;
+}
 
   // ================= CONFIRM ORDER =================
   if (q.data === 'confirm_order') {
