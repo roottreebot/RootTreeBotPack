@@ -264,7 +264,7 @@ function getLeaderboard(page = 0) {
 }
 
 // ================= SEND/EDIT MAIN MENU =================
-async function sendOrEdit(id, text, opt = {}) {
+async function sendOrEditMainMenu(id, text, opt = {}) {
   if (!sessions[id]) sessions[id] = {};
   const mid = sessions[id].mainMsgId;
 
@@ -275,7 +275,7 @@ async function sendOrEdit(id, text, opt = {}) {
         message_id: mid,
         ...opt
       });
-      return { message_id: mid }; // return so session can store it
+      return { message_id: mid };
     } catch {
       sessions[id].mainMsgId = null;
     }
@@ -283,7 +283,30 @@ async function sendOrEdit(id, text, opt = {}) {
 
   const m = await bot.sendMessage(id, text, opt);
   sessions[id].mainMsgId = m.message_id;
-  return m; // return the sent message object
+  return m;
+}
+
+// ================= SEND/EDIT PRODUCT MENU =================
+async function sendOrEditProduct(id, text, opt = {}) {
+  if (!sessions[id]) sessions[id] = {};
+  const mid = sessions[id].productMsgId;
+
+  if (mid) {
+    try {
+      await bot.editMessageText(text, {
+        chat_id: id,
+        message_id: mid,
+        ...opt
+      });
+      return { message_id: mid };
+    } catch {
+      sessions[id].productMsgId = null;
+    }
+  }
+
+  const m = await bot.sendMessage(id, text, opt);
+  sessions[id].productMsgId = m.message_id;
+  return m;
 }
 
 // ================= MAIN MENU =================
@@ -382,18 +405,13 @@ bot.on('callback_query', async q => {
     return showMainMenu(id);
   }
   
-// ================= PRODUCT SELECTION =================
+  // ================= PRODUCT SELECTION =================
 if (q.data.startsWith('product_')) {
-  if (!meta.storeOpen) {
-    return bot.answerCallbackQuery(q.id, { text: 'Store is closed', show_alert: true });
-  }
+  if (!meta.storeOpen) return bot.answerCallbackQuery(q.id, { text: 'Store is closed', show_alert: true });
 
   const pending = users[id].orders.filter(o => o.status === 'Pending').length;
-  if (pending >= 2) {
-    return bot.answerCallbackQuery(q.id, { text: 'You already have 2 pending orders', show_alert: true });
-  }
+  if (pending >= 2) return bot.answerCallbackQuery(q.id, { text: 'You already have 2 pending orders', show_alert: true });
 
-  // ensure session is consistent
   if (!users[id].session) users[id].session = sessions[id];
   const s = users[id].session;
 
@@ -426,8 +444,8 @@ if (q.data.startsWith('product_')) {
 
 ❗️*Note Anything Under 2 ($20) Will Be Auto Rejected*`;
 
-  const msg = await sendOrEdit(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
-  s.mainMsgId = msg.message_id; // store for editing
+  const msg = await sendOrEditProduct(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
+  s.productMsgId = msg.message_id; // store separately from main menu
   return;
 }
 
@@ -441,12 +459,9 @@ if (q.data === 'amount_cash' || q.data === 'amount_grams') {
 
   const choiceText = s.inputType === 'cash' ? '💵 Enter $ Amount' : '⚖️ Enter Grams';
 
-  // send temporary 3-second message
   const tempMsg = await bot.sendMessage(id, `✅ *You Chose:* ${choiceText}\n⌨️ *Waiting For Your Input...*`, { parse_mode: 'Markdown' });
 
-  setTimeout(() => {
-    bot.deleteMessage(id, tempMsg.message_id).catch(() => {});
-  }, 3000);
+  setTimeout(() => { bot.deleteMessage(id, tempMsg.message_id).catch(() => {}); }, 3000);
 
   await bot.answerCallbackQuery(q.id);
   return;
@@ -458,7 +473,7 @@ bot.on('message', async (msg) => {
   if (!users[id] || !users[id].session) return;
   const s = users[id].session;
 
-  if (!s.product || !s.inputType || s.step !== 'choose_amount' || !s.mainMsgId) return;
+  if (!s.product || !s.inputType || s.step !== 'choose_amount' || !s.productMsgId) return;
   if (msg.text.startsWith('/')) return;
 
   const value = parseFloat(msg.text.replace(/[^0-9.]/g, ''));
@@ -499,14 +514,14 @@ Press ✅ Confirm Order`;
   try {
     await bot.editMessageText(text, {
       chat_id: id,
-      message_id: s.mainMsgId,
+      message_id: s.productMsgId, // use productMsgId here
       parse_mode: 'Markdown',
       reply_markup: keyboard
     });
   } catch (err) {
     console.error('Failed to edit YOU HAVE CHOSEN:', err);
     const fallbackMsg = await bot.sendMessage(id, text, { parse_mode: 'Markdown', reply_markup: keyboard });
-    s.mainMsgId = fallbackMsg.message_id;
+    s.productMsgId = fallbackMsg.message_id;
   }
 
   try { await bot.deleteMessage(id, msg.message_id); } catch {}
