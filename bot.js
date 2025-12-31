@@ -435,34 +435,18 @@ bot.on('callback_query', async q => {
     return;
   }
 
-  // ================= AMOUNT TYPE SELECTION =================
-if (q.data === 'amount_cash' || q.data === 'amount_grams') {
-  const choice =
-    q.data === 'amount_cash'
-      ? '💵 Enter $ Amount'
-      : '⚖️ Enter Grams';
+  // ================= AMOUNT TYPE =================
+  if (q.data === 'amount_cash') {
+    s.step = 'amount';
+    s.inputType = 'cash';
+    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send $ Amount Waiting For Your Input!' });
+  }
 
-  // store input type
-  s.inputType = q.data === 'amount_cash' ? 'cash' : 'grams';
-  s.step = 'waiting_input';
-
-  // send temporary message
-  const tempMsg = await bot.sendMessage(
-    id,
-    `✅ *You Chose:* ${choice}\n⌨️ *Waiting For Your Input...*`,
-    { parse_mode: 'Markdown' }
-  );
-
-  // auto delete after 3 seconds
-  setTimeout(() => {
-    bot.deleteMessage(id, tempMsg.message_id).catch(() => {});
-  }, 3000);
-
-  // remove loading animation
-  await bot.answerCallbackQuery(q.id);
-
-  return;
-}
+  if (q.data === 'amount_grams') {
+    s.step = 'amount';
+    s.inputType = 'grams';
+    return bot.answerCallbackQuery(q.id, { text: 'You Have Chosen To Send Grams Waiting For Your Input!' });
+  }
 
   // ================= CONFIRM ORDER =================
   if (q.data === 'confirm_order') {
