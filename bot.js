@@ -382,7 +382,7 @@ bot.on('callback_query', async q => {
     return showMainMenu(id);
   }
   
- // ================= PRODUCT SELECTION =================
+  // ================= PRODUCT SELECTION =================
 if (q.data.startsWith('product_')) {
   if (!meta.storeOpen) {
     return bot.answerCallbackQuery(q.id, {
@@ -399,7 +399,10 @@ if (q.data.startsWith('product_')) {
     });
   }
 
-  // Initialize session for this user
+  // Ensure session object is consistent
+  if (!users[id].session) users[id].session = sessions[id];
+  const s = users[id].session;
+
   s.product = q.data.replace('product_', '');
   s.step = 'choose_amount';
   s.inputType = null;
@@ -429,17 +432,20 @@ if (q.data.startsWith('product_')) {
 
 ❗️*Note Anything Under 2 ($20) Will Be Auto Rejected*`;
 
-  // Send menu and store message_id
+  // send menu and store message_id
   const msg = await sendOrEdit(id, text, {
     parse_mode: 'Markdown',
     reply_markup: keyboard
   });
-  s.mainMsgId = msg.message_id; // <-- now properly stores the message ID
+  s.mainMsgId = msg.message_id; // store correctly in session
   return;
 }
 
 // ================= AMOUNT TYPE CALLBACK =================
 if (q.data === 'amount_cash' || q.data === 'amount_grams') {
+  if (!users[id].session) users[id].session = sessions[id];
+  const s = users[id].session;
+
   s.inputType = q.data === 'amount_cash' ? 'cash' : 'grams';
   s.step = 'choose_amount';
 
@@ -447,7 +453,7 @@ if (q.data === 'amount_cash' || q.data === 'amount_grams') {
     ? '💵 Enter $ Amount'
     : '⚖️ Enter Grams';
 
-  // Temporary 3-second message
+  // send temporary 3-second message
   const tempMsg = await bot.sendMessage(
     id,
     `✅ *You Chose:* ${choiceText}\n⌨️ *Waiting For Your Input...*`,
@@ -465,7 +471,9 @@ if (q.data === 'amount_cash' || q.data === 'amount_grams') {
 // ================= HANDLE USER TEXT INPUT =================
 bot.on('message', async (msg) => {
   const id = msg.chat.id;
-  if (!users[id] || !users[id].session) return;
+  if (!users[id]) return;
+
+  if (!users[id].session) users[id].session = sessions[id];
   const s = users[id].session;
 
   if (!s.product || !s.inputType || s.step !== 'choose_amount') return;
@@ -476,18 +484,17 @@ bot.on('message', async (msg) => {
 
   const price = PRODUCTS[s.product].price;
 
-  // Calculate grams and cash based on input type
   if (s.inputType === 'grams') {
-    if (value < 2) return; // Minimum grams
+    if (value < 2) return; // minimum grams
     s.grams = value;
     s.cash = parseFloat((s.grams * price).toFixed(2));
   } else {
-    if (value < 20) return; // Minimum $
+    if (value < 20) return; // minimum $
     s.cash = value;
     s.grams = parseFloat((s.cash / price).toFixed(2));
   }
 
-  s.step = 'confirm'; // Move to confirm step
+  s.step = 'confirm'; // move to confirm step
 
   const text =
 `🪴 *YOU HAVE CHOSEN*
@@ -507,7 +514,6 @@ Press ✅ Confirm Order`;
     ]
   };
 
-  // Edit the original "YOU HAVE CHOSEN" menu
   try {
     await bot.editMessageText(text, {
       chat_id: id,
@@ -517,7 +523,6 @@ Press ✅ Confirm Order`;
     });
   } catch (err) {
     console.error('Failed to edit YOU HAVE CHOSEN:', err);
-    // Fallback: send a new message
     const fallbackMsg = await bot.sendMessage(id, text, {
       parse_mode: 'Markdown',
       reply_markup: keyboard
@@ -525,9 +530,8 @@ Press ✅ Confirm Order`;
     s.mainMsgId = fallbackMsg.message_id;
   }
 
-  // Delete user input for clean UI
   try { await bot.deleteMessage(id, msg.message_id); } catch {}
-}); 
+});
   
   // ================= CONFIRM ORDER =================
   if (q.data === 'confirm_order') {
