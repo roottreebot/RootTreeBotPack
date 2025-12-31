@@ -251,8 +251,8 @@ function getLeaderboard(page = 0) {
   const totalPages = Math.ceil(list.length / lbSize) || 1;
   const slice = list.slice(page * lbSize, page * lbSize + lbSize);
 
-  let text = `*📊 Weekly Leaderboard*\n`;
-text += `*Want To Go Private?* /wlprivate & /wlon\n`;
+  let text = `*📊 WEEKLY LEADERBOARD*\n`;
+text += `Want To Go Private*?* /wlprivate & /wlon\n`;
   slice.forEach(([id, u], i) => {
     const name = u.privateWL
       ? '👤 Private User'
@@ -328,20 +328,20 @@ await sendOrEdit(
   id,
 `${storeStatus}
 
-📊 *Level System*
-📝 *Buy Role /shop & /buy* 
+📊 *LEVEL SYSTEM*
+   *Buy Role /shop & /buy* 
 👑 *Highest Role*: *${highestRole}*
 🎚 Level: *${u.level}*
 📊 *XP*: ${xpBar(u.xp, u.level)}
 
-📦 *Your Orders* (*Last 5*)
+📦 *YOUR ORDERS* (*LAST 5*)
 ${orders}
 
-🌟 *Extra*
+🌟 *EXTRA*
 ${streakText(u)}
 ${lotteryLine}
 
-📦 *Product*
+📦 *PRODUCT*
 🥤 *Sprite Popperz* - *Info* /spritepop
 🍃 *Killer Green Budz* - *Info* /killergb
 
