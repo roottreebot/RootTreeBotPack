@@ -1067,8 +1067,7 @@ bot.onText(/\/userprofile(?:\s+(.+))?/i, async (msg, match) => {
 
 🎁 *ROLES*
 ———————————————————
-👑 *Highest Role*: *${highestRole}*
-🎭 Roles: ${roles}
+🎭 *ALL*: ${roles}
 
 🌟 *EXTRA*
 ———————————————————
