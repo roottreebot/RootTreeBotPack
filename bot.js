@@ -252,7 +252,7 @@ function getLeaderboard(page = 0) {
   const slice = list.slice(page * lbSize, page * lbSize + lbSize);
 
   let text = `——————————————————\n`;
-text += `*▏🏆 ▏WEEKLY LEADERBOARD*\n`;
+text += `*▏🏆 WEEKLY LEADERBOARD*\n`;
 text += `▏🔒 Want To Go Private? 
 ▏/wlprivate • /wlon\n`;
 text += `——————————————————\n`;
@@ -334,24 +334,24 @@ await sendOrEdit(
 ——————————————————
 ▏📊 ▏*STATS*
 ——————————————————
-▏🛒 Buy Roles: /shop • /buy
-▏👑 *Highest Role*: *${highestRole}*
-▏🎚 Level: *${u.level}*
-▏📊 *XP*: ${xpBar(u.xp, u.level)}
+🛒 Buy Roles: /shop • /buy
+👑 *Highest Role*: *${highestRole}*
+🎚 Level: *${u.level}*
+📊 *XP*: ${xpBar(u.xp, u.level)}
 ——————————————————
-▏📦 ▏*YOUR ORDERS* (*LAST 5*)
+▏📦 *YOUR ORDERS* (*LAST 5*)
 ——————————————————
-▏${orders}
+${orders}
 ——————————————————
-▏🌟 ▏*EXTRA*
+▏🌟 *EXTRA*
 ——————————————————
-▏${streakText(u)}
-▏${lotteryLine}
+${streakText(u)}
+${lotteryLine}
 ——————————————————
-▏🛍 ▏*PRODUCTS*
+▏🛍 *PRODUCTS*
 ——————————————————
-▏🥤 *Sprite Popperz* - *Info* /spritepop
-▏🍃 *Killer Green Budz* - *Info* /killergb
+🥤 *Sprite Popperz* - *Info* /spritepop
+🍃 *Killer Green Budz* - *Info* /killergb
 
 ${lb.text}`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
