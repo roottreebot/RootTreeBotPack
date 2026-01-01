@@ -1,4 +1,4 @@
-// === ROOTTREE BOT (FINAL: V2.00.10 ) ===
+// === ROOTTREE BOT (FINAL: V.2.00.14 ) ===
 const TelegramBot = require('node-telegram-bot-api');
 // Track bot start time
 const BOT_START_TIME = Date.now();
@@ -352,6 +352,7 @@ ${lotteryLine}
 ——————————————————
 🥤 *Sprite Popperz* - *Info* /spritepop
 🍃 *Killer Green Budz* - *Info* /killergb
+
 ${lb.text}`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
   );
