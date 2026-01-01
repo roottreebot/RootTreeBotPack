@@ -513,12 +513,16 @@ bot.on('message', async msg => {
 
   const summary = `
 🪴 *ORDER SUMMARY*
-*${s.product}*
+———————————————————
 
-⚖️ Amount: *${s.grams}g*
-💲 Total: *$${s.cash}*
+🛍YOU CHOSE *${s.product}*
+
+⚖️ *AMOUNT*: *${s.grams}g*
+💲 *TOTAL*: *$${s.cash}*
 
 Press ✅ Confirm Order
+
+———————————————————
 `;
 
   await sendOrEdit(id, summary, {
@@ -2004,7 +2008,10 @@ bot.onText(/\/daily/, (msg) => {
 
     return bot.sendMessage(
       id,
-      `⏳ *Daily already claimed*\n\nCome back in *${hours}h ${mins}m*`,
+      `———————————————————
+      ⏳ *DAILY ALREADY CLAIMED*\n\nCOMEBACK IN *${hours}h ${mins}m*
+      ———————————————————
+      `,
       { parse_mode: 'Markdown' }
     ).then(sent => {
       setTimeout(() => {
@@ -2034,6 +2041,7 @@ bot.onText(/\/daily/, (msg) => {
   bot.sendMessage(
     id,
 `🎁 *Daily Reward Claimed!*
+———————————————————
 
 🔥 Streak: *${u.dailyStreak} day${u.dailyStreak > 1 ? 's' : ''}*
 ✨ Base XP: *+${baseXP}*
@@ -2042,7 +2050,8 @@ bot.onText(/\/daily/, (msg) => {
 
 🏆 Level: *${u.level}*
 
-Come back tomorrow to keep the streak alive!`,
+COMEBACK TOMORROW TO KEEP THE STREAK GOING❗️❗️
+———————————————————`,
     { parse_mode: 'Markdown' }
   ).then(sent => {
     setTimeout(() => {
