@@ -332,7 +332,7 @@ await sendOrEdit(
 `${storeStatus}
 
 ——————————————————
-📊 *STATS*
+▏📊 *STATS*
 ——————————————————
 🛒 Buy Roles: /shop • /buy
 👑 *Highest Role*: *${highestRole}*
