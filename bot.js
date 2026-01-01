@@ -251,7 +251,8 @@ function getLeaderboard(page = 0) {
   const totalPages = Math.ceil(list.length / lbSize) || 1;
   const slice = list.slice(page * lbSize, page * lbSize + lbSize);
 
-  let text = `*🏆 WEEKLY LEADERBOARD*\n`;
+  let text = `——————————————————\n`;
+text += `*🏆 WEEKLY LEADERBOARD*\n`;
 text += `🔒 Want To Go Private? 
 /wlprivate • /wlon\n`;
 text += `——————————————————\n`;
