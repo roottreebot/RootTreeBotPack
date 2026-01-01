@@ -251,11 +251,11 @@ function getLeaderboard(page = 0) {
   const totalPages = Math.ceil(list.length / lbSize) || 1;
   const slice = list.slice(page * lbSize, page * lbSize + lbSize);
 
-  let text = `——————————————————\n`;
+  let text = `———————————————————\n`;
 text += `*▏🏆 WEEKLY LEADERBOARD*\n`;
 text += `▏🔒 Want To Go Private? 
 ▏/wlprivate • /wlon\n`;
-text += `——————————————————\n`;
+text += `———————————————————\n`;
   slice.forEach(([id, u], i) => {
     const name = u.privateWL
       ? '👤 Private User'
@@ -263,7 +263,7 @@ text += `——————————————————\n`;
 
     text += `▏#${page * lbSize + i + 1} — *${name}* — Lv *${u.level}* — XP *${u.weeklyXp}*\n`;
   });
-text += `——————————————————\n`;
+text += `———————————————————\n`;
   const buttons = [[
     { text: '⬅ Prev', callback_data: `lb_${page - 1}` },
     { text: '➡ Next', callback_data: `lb_${page + 1}` }
