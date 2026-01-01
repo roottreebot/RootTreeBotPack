@@ -356,15 +356,15 @@ ${lb.text}`,
   );
 }
 
-// START handler
+// ================= START =================
 bot.onText(/\/start/, async msg => {
   const id = msg.chat.id;
+  ensureUser(id, msg.from.username);
 
   if (!sessions[id]) sessions[id] = {};
 
-  const sent = await bot.sendMessage(id, MAIN_MENU_TEXT, mainKeyboard);
-
-  sessions[id].mainMsgId = sent.message_id;
+  // Always show main menu using the unified editor
+  await showMainMenu(id);
 });
 
 // ================= CALLBACKS =================
