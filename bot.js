@@ -252,16 +252,16 @@ function getLeaderboard(page = 0) {
   const slice = list.slice(page * lbSize, page * lbSize + lbSize);
 
   let text = `——————————————————\n`;
-text += `*🏆 WEEKLY LEADERBOARD*\n`;
-text += `🔒 Want To Go Private? 
-/wlprivate • /wlon\n`;
+text += `*▏🏆 ▏WEEKLY LEADERBOARD*\n`;
+text += `▏🔒 Want To Go Private? 
+▏/wlprivate • /wlon\n`;
 text += `——————————————————\n`;
   slice.forEach(([id, u], i) => {
     const name = u.privateWL
       ? '👤 Private User'
       : (u.username ? `@${u.username}` : id);
 
-    text += `#${page * lbSize + i + 1} — *${name}* — Lv *${u.level}* — XP *${u.weeklyXp}*\n`;
+    text += `▏#${page * lbSize + i + 1} — *${name}* — Lv *${u.level}* — XP *${u.weeklyXp}*\n`;
   });
 
   const buttons = [[
@@ -331,27 +331,27 @@ await sendOrEdit(
   id,
 `${storeStatus}
 
-┌—————————————————
-▏📊 *STATS*
 ——————————————————
-🛒 Buy Roles: /shop • /buy
-👑 *Highest Role*: *${highestRole}*
-🎚 Level: *${u.level}*
-📊 *XP*: ${xpBar(u.xp, u.level)}
+▏📊 ▏*STATS*
 ——————————————————
-📦 *YOUR ORDERS* (*LAST 5*)
+▏🛒 Buy Roles: /shop • /buy
+▏👑 *Highest Role*: *${highestRole}*
+▏🎚 Level: *${u.level}*
+▏📊 *XP*: ${xpBar(u.xp, u.level)}
 ——————————————————
-${orders}
+▏📦 ▏*YOUR ORDERS* (*LAST 5*)
 ——————————————————
-🌟 *EXTRA*
+▏${orders}
 ——————————————————
-${streakText(u)}
-${lotteryLine}
+▏🌟 ▏*EXTRA*
 ——————————————————
-🛍 *PRODUCTS*
+▏${streakText(u)}
+▏${lotteryLine}
 ——————————————————
-🥤 *Sprite Popperz* - *Info* /spritepop
-🍃 *Killer Green Budz* - *Info* /killergb
+▏🛍 ▏*PRODUCTS*
+——————————————————
+▏🥤 *Sprite Popperz* - *Info* /spritepop
+▏🍃 *Killer Green Budz* - *Info* /killergb
 
 ${lb.text}`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
