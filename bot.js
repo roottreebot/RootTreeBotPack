@@ -357,8 +357,14 @@ ${lb.text}`,
 }
 
 // START handler
-bot.onText(/\/start|\/help/, async msg => {
-  await showMainMenu(msg.chat.id, 0);
+bot.onText(/\/start/, async msg => {
+  const id = msg.chat.id;
+
+  if (!sessions[id]) sessions[id] = {};
+
+  const sent = await bot.sendMessage(id, MAIN_MENU_TEXT, mainKeyboard);
+
+  sessions[id].mainMsgId = sent.message_id;
 });
 
 // ================= CALLBACKS =================
@@ -449,33 +455,81 @@ bot.on('callback_query', async q => {
 
   // ================= AMOUNT TYPE SELECTION =================
 if (q.data === 'amount_cash' || q.data === 'amount_grams') {
-  if (!users[id].session) users[id].session = sessions[id];
-  const s = users[id].session;
+  const s = sessions[id];
 
-  // store input type and step
   s.inputType = q.data === 'amount_cash' ? 'cash' : 'grams';
-  s.step = 'amount'; // matches your simpler flow
+  s.step = 'amount';
 
-  const choiceText = s.inputType === 'cash' ? '💵 Enter $ Amount' : '⚖️ Enter Grams';
+  const price = PRODUCTS[s.product].price;
 
-  // send temporary 3-second message
-  const tempMsg = await bot.sendMessage(
-    id,
-    `✅ *You Chose:* ${choiceText}\n⌨️ *Waiting For Your Input...*`,
-    { parse_mode: 'Markdown' }
-  );
+  const text = `
+🪴 *ORDER SUMMARY*
+*${s.product}*
 
-  // auto delete temporary message
-  setTimeout(() => {
-    bot.deleteMessage(id, tempMsg.message_id).catch(() => {});
-  }, 3000);
+💲 Price per gram: *$${price}*
 
-  // show inline feedback immediately (removes loading animation)
-  await bot.answerCallbackQuery(q.id, { text: `You Chose: ${choiceText}`, show_alert: false });
+✏️ *Enter ${s.inputType === 'cash' ? '$ amount' : 'grams'} now*
+`;
+
+  await sendOrEdit(id, text, {
+    parse_mode: 'Markdown'
+  });
 
   return;
 }
 
+  // ================= USER AMOUNT INPUT =================
+bot.on('message', async msg => {
+  const id = msg.chat.id;
+  const text = msg.text;
+
+  if (!text || text.startsWith('/')) return;
+  if (!sessions[id]) return;
+
+  const s = sessions[id];
+  if (s.step !== 'amount') return;
+
+  // delete user input
+  bot.deleteMessage(id, msg.message_id).catch(() => {});
+
+  const price = PRODUCTS[s.product].price;
+  const value = parseFloat(text);
+
+  if (isNaN(value) || value <= 0) {
+    return;
+  }
+
+  if (s.inputType === 'grams') {
+    s.grams = value.toFixed(2);
+    s.cash = (value * price).toFixed(2);
+  } else {
+    s.cash = value.toFixed(2);
+    s.grams = (value / price).toFixed(2);
+  }
+
+  s.step = 'confirm';
+
+  const summary = `
+🪴 *ORDER SUMMARY*
+*${s.product}*
+
+⚖️ Amount: *${s.grams}g*
+💲 Total: *$${s.cash}*
+
+Press ✅ Confirm Order
+`;
+
+  await sendOrEdit(id, summary, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [[
+        { text: '✅ Confirm Order', callback_data: 'confirm_order' },
+        { text: '↩️ Back', callback_data: 'reload' }
+      ]]
+    }
+  });
+});
+  
   // ================= CONFIRM ORDER =================
   if (q.data === 'confirm_order') {
     if (!s.product || !s.grams || !s.cash) {
