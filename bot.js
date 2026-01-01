@@ -332,7 +332,7 @@ await sendOrEdit(
 `${storeStatus}
 
 ——————————————————
-▏📊 ▏*STATS*
+▏📊 *STATS*
 ——————————————————
 🛒 Buy Roles: /shop • /buy
 👑 *Highest Role*: *${highestRole}*
@@ -352,7 +352,6 @@ ${lotteryLine}
 ——————————————————
 🥤 *Sprite Popperz* - *Info* /spritepop
 🍃 *Killer Green Budz* - *Info* /killergb
-
 ${lb.text}`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
   );
