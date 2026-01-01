@@ -1099,7 +1099,7 @@ bot.onText(/\/spritepop/, async (msg) => {
 
   const text = `
 🥤 *SPRITE POPPERZ*
-━━━━━━━━━━━━━━━━
+———————————————————
 
 🏅 *CREATED BY* @v1leshop
 
@@ -1114,7 +1114,7 @@ A sharp burst of citrus-style freshness wrapped in sticky, crystal-coated buds. 
 
 💨 *Light it up. Sit back. Let Sprite Popperz do the rest.*
 
-━━━━━━━━━━━━━━━━
+———————————————————
 `;
 
   const sent = await bot.sendMessage(id, text, { parse_mode: 'Markdown' });
@@ -1133,7 +1133,7 @@ bot.onText(/\/killergb/, async (msg) => {
 
   const text = `
 🍀 *KILLER GREEN BUDZ*
-━━━━━━━━━━━━━━━━
+———————————————————
 
 🏅 *CREATED BY* @missusv1le
 
@@ -1147,6 +1147,8 @@ Killer Green Budz brings that classic, sticky green goodness with a bold, natura
 • Perfect for late nights & deep chills*
 
 💨 *Old-school feel. New-level quality.*
+
+———————————————————
 `;
 
   const sent = await bot.sendMessage(id, text, { parse_mode: 'Markdown' });
