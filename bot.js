@@ -348,7 +348,7 @@ ${orders}
 ${streakText(u)}
 ${lotteryLine}
 ———————————————————
-▏🛍 *PRODUCTS*
+▏🛍 *PRODUCTS* ● ${storeStatus}
 ———————————————————
 🥤 *Sprite Popperz* - *Info* /spritepop
 🍃 *Killer Green Budz* - *Info* /killergb
