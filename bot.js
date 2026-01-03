@@ -39,9 +39,9 @@ const META_FILE = 'meta.json';
 const FEEDBACK_FILE = 'feedback.json';
 
 let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
-let meta = fs.existsSync(META_FILE)
-  ? JSON.parse(fs.readFileSync(META_FILE))
-  : { weeklyReset: Date.now(), storeOpen: true };
+let meta = fs.existsSync(META_FILE) ? JSON.parse(fs.readFileSync(META_FILE)) : { weeklyReset: Date.now(), storeOpen: true };
+if (!meta.lottery) meta.lottery = { active: false, role: null, entries: [] };
+if (!meta.drop) meta.drop = { active: false, title: '', description: '' };
 
 if (!meta.lottery) {
   meta.lottery = {
@@ -299,10 +299,6 @@ async function sendOrEdit(id, text, opt = {}) {
   sessions[id].mainMsgId = m.message_id;
 }
 
-const dropText = meta.drop.active
-  ? `🟢 *DROP LIVE:* ${meta.drop.title}`
-  : `🔴 *NO ACTIVE DROP*`;
-
 // ================= MAIN MENU =================
 async function showMainMenu(id, lbPage = 0) {
   ensureUser(id);
@@ -334,6 +330,10 @@ async function showMainMenu(id, lbPage = 0) {
 
   const storeStatus = meta.storeOpen ? '😙💨 *STORE OPEN*' : '😙❌️ *STORE CLOSED*';
 
+const dropStatus = meta.drop.active
+  ? `🟢 *DROP LIVE:* ${meta.drop.title}`
+  : `🔴 *NO ACTIVE DROP*`;
+  
   const lotteryLine = getLotteryMenuText();
 
 await sendOrEdit(
@@ -374,7 +374,21 @@ bot.onText(/\/start/, async msg => {
   const id = msg.chat.id;
   ensureUser(id, msg.from.username);
 
-  if (!sessions[id]) sessions[id] = {};
+  if (sessions[id]?.dropStep === 'title' && ADMIN_IDS.includes(id)) {
+  delete sessions[id].dropStep;
+  meta.drop.title = msg.text.trim();
+  meta.drop.active = true; // auto-activate
+  sessions[id].dropStep = 'desc';
+  saveAll();
+  return bot.sendMessage(id, '📝 *Enter Drop Description:*', { parse_mode: 'Markdown' });
+}
+
+if (sessions[id]?.dropStep === 'desc' && ADMIN_IDS.includes(id)) {
+  meta.drop.description = msg.text.trim();
+  delete sessions[id].dropStep;
+  saveAll();
+  return bot.sendMessage(id, `✅ Drop Live!\n*${meta.drop.title}*\n${meta.drop.description}`, { parse_mode: 'Markdown' });
+}
 
   // Always show main menu using the unified editor
   await showMainMenu(id);
@@ -387,15 +401,15 @@ bot.on('callback_query', async q => {
   const s = sessions[id] || (sessions[id] = {});
   await bot.answerCallbackQuery(q.id).catch(() => {});
 
- // ================= DROP CALLBACK HANDLERS =================
-if (ADMIN_IDS.includes(id) && q.data === 'drop_set_start') {
-  meta.drop.active = true;
-  saveAll();
+// ==================== DROPS CALLBACKS ====================
+if (ADMIN_IDS.includes(id) && q.data === 'drop_set') {
+  await bot.answerCallbackQuery(q.id);
   sessions[id].dropStep = 'title';
-  return bot.sendMessage(id, '🖊️ *Enter Drop Title:*', { parse_mode: 'Markdown' });
+  return bot.sendMessage(id, '📝 *Enter Drop Title:*', { parse_mode: 'Markdown' });
 }
 
 if (ADMIN_IDS.includes(id) && q.data === 'drop_end') {
+  await bot.answerCallbackQuery(q.id);
   meta.drop.active = false;
   meta.drop.title = '';
   meta.drop.description = '';
@@ -1223,26 +1237,24 @@ Killer Green Budz brings that classic, sticky green goodness with a bold, natura
 bot.onText(/\/drops/, async msg => {
   const id = msg.chat.id;
   if (!ADMIN_IDS.includes(id)) return;
-
   const drop = meta.drop;
-  const status = drop.active ? `🟢 LIVE: *${drop.title}*` : '🔴 No Active Drop';
 
   const text =
-    `🎁 *DROPS CONTROL PANEL*\nStatus: ${status}\n\n` +
-    `📝 Current: ${drop.active ? drop.description : '_None_'}`;
+    `🎁 *DROPS PANEL*\nStatus: ${drop.active ? '🟢 LIVE' : '🔴 NONE'}\n\n` +
+    (drop.active ? `*${drop.title}*\n${drop.description}` : '_No active drop_');
 
-  const kb = {
+  const options = {
+    parse_mode: 'Markdown',
     reply_markup: {
       inline_keyboard: [
-        [{ text: '🟢 Start/Edit Drop', callback_data: 'drop_set_start' }],
+        [{ text: '🟢 Start/Edit Drop', callback_data: 'drop_set' }],
         [{ text: '🔴 End Drop', callback_data: 'drop_end' }],
-        [{ text: '↩️ Back to Menu', callback_data: 'reload' }]
+        [{ text: '↩️ Back', callback_data: 'reload' }]
       ]
-    },
-    parse_mode: 'Markdown'
+    }
   };
 
-  await bot.sendMessage(id, text, kb);
+  await bot.sendMessage(id, text, options);
 });
 
 // ================= /shop COMMAND =================
