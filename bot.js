@@ -1,4 +1,4 @@
-// === ROOTTREE BOT (FINAL: V.2.00.20 ) ===
+// === ROOTTREE BOT (FINAL: V.2.00.21 ) ===
 const TelegramBot = require('node-telegram-bot-api');
 // Track bot start time
 const BOT_START_TIME = Date.now();
@@ -1290,6 +1290,64 @@ bot.onText(/\/buy (.+)/i, (msg, match) => {
     { parse_mode: 'Markdown' }
   );
 });
+
+// ================= /CLEARHISTORY =================
+bot.onText(/\/clearhistory/, async (msg) => {
+  const id = msg.chat.id;
+
+  if (!sessions[id]) sessions[id] = {};
+
+  // Track messages deleted
+  let deletedCount = 0;
+
+  // Delete all tracked bot messages
+  if (sessions[id].botMessages && sessions[id].botMessages.length) {
+    for (const mid of sessions[id].botMessages) {
+      try {
+        await bot.deleteMessage(id, mid);
+        deletedCount++;
+      } catch (e) {
+        // Ignore errors if message already deleted or too old
+      }
+    }
+  }
+
+  // Clear bot message tracking
+  sessions[id].botMessages = [];
+
+  // Edit main menu message to remove inline keyboard (if exists)
+  if (sessions[id].mainMsgId) {
+    try {
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: id, message_id: sessions[id].mainMsgId });
+    } catch (e) {
+      // Ignore errors if menu already deleted or no keyboard
+    }
+  }
+
+  // Edit active drop message (if exists)
+  if (sessions[id].dropMsgId) {
+    try {
+      await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: id, message_id: sessions[id].dropMsgId });
+    } catch (e) {}
+  }
+
+  // Send a temporary confirmation
+  const confirmation = await bot.sendMessage(id, `🗑️ Cleared ${deletedCount} bot messages and cleaned menus.`);
+
+  // Track confirmation message so it can also be cleared later
+  if (!sessions[id].botMessages) sessions[id].botMessages = [];
+  sessions[id].botMessages.push(confirmation.message_id);
+});
+
+// ================= HELPER FUNCTION =================
+// Replace all bot.sendMessage calls with botSend to auto-track messages
+async function botSend(id, text, options = {}) {
+  const sent = await bot.sendMessage(id, text, options);
+  if (!sessions[id]) sessions[id] = {};
+  if (!sessions[id].botMessages) sessions[id].botMessages = [];
+  sessions[id].botMessages.push(sent.message_id);
+  return sent;
+}
 
 // ================= /userhelp =============
 bot.onText(/\/userhelp/, async (msg) => {
