@@ -39,9 +39,9 @@ const META_FILE = 'meta.json';
 const FEEDBACK_FILE = 'feedback.json';
 
 let users = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE)) : {};
-let meta = fs.existsSync(META_FILE) ? JSON.parse(fs.readFileSync(META_FILE)) : { weeklyReset: Date.now(), storeOpen: true };
-if (!meta.lottery) meta.lottery = { active: false, role: null, entries: [] };
-if (!meta.drop) meta.drop = { active: false, title: '', description: '' };
+let meta = fs.existsSync(META_FILE)
+  ? JSON.parse(fs.readFileSync(META_FILE))
+  : { weeklyReset: Date.now(), storeOpen: true };
 
 if (!meta.lottery) {
   meta.lottery = {
@@ -218,11 +218,6 @@ function getLotteryMenuText() {
   return `🎟 /lottery Reward: ${meta.lottery.role}`;
 }
 
-// ================= DROP SYSTEM =================
-if (!meta.drop) {
-  meta.drop = { active: false, title: '', description: '' };
-}
-
 // ================= SESSIONS =================
 const sessions = {};
 
@@ -307,26 +302,20 @@ async function showMainMenu(id, lbPage = 0) {
   const u = users[id];
   const highestRole = getHighestRole(u);
 
-  // Prepare orders text (last 5)
   const orders = u.orders.length
-    ? u.orders
-        .slice(-5)
-        .map(
-          o =>
-            `${o.status === '✅ Accepted' ? '🟢' : '⚪'} *${o.product}* — ${o.grams}g — $${o.cash} — *${o.status}*`
-        )
-        .join('\n')
+    ? u.orders.map(o =>
+        `${o.status === '✅ Accepted' ? '🟢' : '⚪'} *${o.product}* — ${o.grams}g — $${o.cash} — *${o.status}*`
+      ).join('\n')
     : '_No orders yet_';
 
-  // Leaderboard
   const lb = getLeaderboard(lbPage);
 
-  // Inline keyboard for products
   let kb = [
     ...Object.keys(PRODUCTS).map(p => [{ text: `🛍 ${p}`, callback_data: `product_${p}` }]),
+    lb.buttons[0],
+
   ];
 
-  // Admin store open/close button
   if (ADMIN_IDS.includes(id)) {
     const storeBtn = meta.storeOpen
       ? { text: '🔴 Close: Store', callback_data: 'store_close' }
@@ -334,16 +323,13 @@ async function showMainMenu(id, lbPage = 0) {
     kb.push([storeBtn]);
   }
 
-  // Drop button
-  kb.push([{ text: '🎁 View Drop', callback_data: 'view_drop' }]);
-
   const storeStatus = meta.storeOpen ? '😙💨 *STORE OPEN*' : '😙❌️ *STORE CLOSED*';
-  const lotteryLine = getLotteryMenuText();
-  const streak = streakText(u);
 
-  await sendOrEdit(
-    id,
-    `
+  const lotteryLine = getLotteryMenuText();
+
+await sendOrEdit(
+  id,
+`
 ———————————————————
 ▏📊 *STATS* ● /userprofile
 ———————————————————
@@ -356,37 +342,30 @@ async function showMainMenu(id, lbPage = 0) {
 ———————————————————
 ${orders}
 ———————————————————
-▏🌟 *EXTRA* ${storeStatus}
+▏🌟 *EXTRA*
 ———————————————————
-${streak}
+${streakText(u)}
 ${lotteryLine}
 ———————————————————
-▏🛍 *PRODUCTS*
+▏🛍 *PRODUCTS* ● ${storeStatus}
 ———————————————————
 🥤 *Sprite Popperz* - *Info* /spritepop
 🍃 *Killer Green Budz* - *Info* /killergb
-———————————————————
-${lb.text}
-`,
+
+${lb.text}`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
   );
 }
 
-// ================= DROP CALLBACK =================
-bot.on('callback_query', async q => {
-  const id = q.message.chat.id;
+// ================= START =================
+bot.onText(/\/start/, async msg => {
+  const id = msg.chat.id;
+  ensureUser(id, msg.from.username);
 
-  if (q.data === 'view_drop') {
-    if (meta.drop && meta.drop.active) {
-      await bot.sendMessage(
-        id,
-        `🟢 *DROP LIVE*\n\n*${meta.drop.title}*\n_${meta.drop.description}_`,
-        { parse_mode: 'Markdown' }
-      );
-    } else {
-      await bot.sendMessage(id, '🔴 No active drop');
-    }
-  }
+  if (!sessions[id]) sessions[id] = {};
+
+  // Always show main menu using the unified editor
+  await showMainMenu(id);
 });
 
 // ================= CALLBACKS =================
@@ -396,22 +375,6 @@ bot.on('callback_query', async q => {
   const s = sessions[id] || (sessions[id] = {});
   await bot.answerCallbackQuery(q.id).catch(() => {});
 
-// ==================== DROPS CALLBACKS ====================
-if (ADMIN_IDS.includes(id) && q.data === 'drop_set') {
-  await bot.answerCallbackQuery(q.id);
-  sessions[id].dropStep = 'title';
-  return bot.sendMessage(id, '📝 *Enter Drop Title:*', { parse_mode: 'Markdown' });
-}
-
-if (ADMIN_IDS.includes(id) && q.data === 'drop_end') {
-  await bot.answerCallbackQuery(q.id);
-  meta.drop.active = false;
-  meta.drop.title = '';
-  meta.drop.description = '';
-  saveAll();
-  return bot.sendMessage(id, '🔴 Drop ended.', { parse_mode: 'Markdown' });
-}
-  
   // ================= NAVIGATION =================
   if (q.data === 'reload') {
     s.step = null;
@@ -1212,109 +1175,6 @@ Killer Green Budz brings that classic, sticky green goodness with a bold, natura
     bot.deleteMessage(id, cmdMsgId).catch(() => {});
   }, 10000);
 });
-
-// ================= /drops SYSTEM =================
-
-// ---- Admin: Create Drop ----
-bot.on('message', async (msg) => {
-  const id = msg.chat.id;
-  const text = msg.text;
-
-  if (!text || text.startsWith('/')) return;
-
-  // Only admins can create drops
-  if (!ADMIN_IDS.includes(id)) return;
-
-  // Step 1: Title
-  if (sessions[id]?.dropStep === 'title') {
-    meta.drop = meta.drop || {};
-    meta.drop.title = text.trim();
-    meta.drop.active = true;
-
-    sessions[id].dropStep = 'desc';
-    saveAll();
-
-    return bot.sendMessage(id, '📝 *Enter Drop Description:*', { parse_mode: 'Markdown' });
-  }
-
-  // Step 2: Description
-  if (sessions[id]?.dropStep === 'desc') {
-    meta.drop.description = text.trim();
-    delete sessions[id].dropStep;
-    saveAll();
-
-    // Notify admin drop is live
-    return bot.sendMessage(
-      id,
-      `✅ *DROP LIVE*\n\n*${meta.drop.title}*\n${meta.drop.description}`,
-      { parse_mode: 'Markdown' }
-    );
-  }
-});
-
-// ---- Admin: Start Drop Creation ----
-bot.onText(/\/setdrop/, async (msg) => {
-  const id = msg.chat.id;
-  if (!ADMIN_IDS.includes(id)) return;
-
-  sessions[id] = sessions[id] || {};
-  sessions[id].dropStep = 'title';
-
-  return bot.sendMessage(id, '📝 *Enter Drop Title:*', { parse_mode: 'Markdown' });
-});
-
-// ---- Admin: End / Delete Drop ----
-bot.onText(/\/deletedrop/, async (msg) => {
-  const id = msg.chat.id;
-  if (!ADMIN_IDS.includes(id)) return;
-
-  if (meta.drop) {
-    meta.drop.active = false;
-    saveAll();
-    return bot.sendMessage(id, '❌ Drop has been deleted.');
-  } else {
-    return bot.sendMessage(id, '⚠️ No active drop to delete.');
-  }
-});
-
-// ---- Users: View Drop ----
-bot.onText(/\/drops/, async (msg) => {
-  const id = msg.chat.id;
-
-  if (!meta.drop || !meta.drop.active) {
-    return bot.sendMessage(id, '🔴 No active drop at the moment.');
-  }
-
-  return bot.sendMessage(
-    id,
-    `🟢 *DROP LIVE*\n\n*${meta.drop.title}*\n${meta.drop.description}`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-// ---- Inline Callback: View Drop from Main Menu ----
-bot.on('callback_query', async (q) => {
-  const id = q.message.chat.id;
-
-  if (q.data === 'view_drop') {
-    if (!meta.drop || !meta.drop.active) {
-      return bot.answerCallbackQuery(q.id, { text: 'No active drop', show_alert: true });
-    }
-
-    return bot.answerCallbackQuery(q.id, {
-      text: `🟢 *DROP LIVE*\n${meta.drop.title}\n${meta.drop.description}`,
-      show_alert: true
-    });
-  }
-});
-
-// ---- Main Menu Drop Display ----
-function getDropText() {
-  if (!meta.drop || !meta.drop.active) return '🔴 No active drop';
-  return `🟢 *LIVE:* ${meta.drop.title}\n_${meta.drop.description}_`;
-}
-
-// Use getDropText() in your main menu message
 
 // ================= /shop COMMAND =================
 const SHOP_PAGE_SIZE = 5;
