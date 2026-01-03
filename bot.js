@@ -307,20 +307,26 @@ async function showMainMenu(id, lbPage = 0) {
   const u = users[id];
   const highestRole = getHighestRole(u);
 
+  // Prepare orders text (last 5)
   const orders = u.orders.length
-    ? u.orders.map(o =>
-        `${o.status === '✅ Accepted' ? '🟢' : '⚪'} *${o.product}* — ${o.grams}g — $${o.cash} — *${o.status}*`
-      ).join('\n')
+    ? u.orders
+        .slice(-5)
+        .map(
+          o =>
+            `${o.status === '✅ Accepted' ? '🟢' : '⚪'} *${o.product}* — ${o.grams}g — $${o.cash} — *${o.status}*`
+        )
+        .join('\n')
     : '_No orders yet_';
 
+  // Leaderboard
   const lb = getLeaderboard(lbPage);
 
+  // Inline keyboard for products
   let kb = [
     ...Object.keys(PRODUCTS).map(p => [{ text: `🛍 ${p}`, callback_data: `product_${p}` }]),
-    lb.buttons[0],
-
   ];
 
+  // Admin store open/close button
   if (ADMIN_IDS.includes(id)) {
     const storeBtn = meta.storeOpen
       ? { text: '🔴 Close: Store', callback_data: 'store_close' }
@@ -328,28 +334,16 @@ async function showMainMenu(id, lbPage = 0) {
     kb.push([storeBtn]);
   }
 
+  // Drop button
+  kb.push([{ text: '🎁 View Drop', callback_data: 'view_drop' }]);
+
   const storeStatus = meta.storeOpen ? '😙💨 *STORE OPEN*' : '😙❌️ *STORE CLOSED*';
+  const lotteryLine = getLotteryMenuText();
+  const streak = streakText(u);
 
-const dropText = meta.drop?.active
-  ? `🟢 *LIVE:* ${meta.drop.title}\n_${meta.drop.description}_`
-  : `🔴 No active drop`;
-
-let kb = [
-  ...Object.keys(PRODUCTS).map(p => [{ text: `🛍 ${p}`, callback_data: `product_${p}` }]),
-  [{ text: '🎁 View Drop', callback_data: 'view_drop' }], // ✅ Drop button inline
-  lb.buttons[0]
-];
-
-if (ADMIN_IDS.includes(id)) {
-  const storeBtn = meta.storeOpen
-    ? { text: '🔴 Close: Store', callback_data: 'store_close' }
-    : { text: '🟢 Open: Store', callback_data: 'store_open' };
-  kb.push([storeBtn]);
-}
-
-await sendOrEdit(
-  id,
-`
+  await sendOrEdit(
+    id,
+    `
 ———————————————————
 ▏📊 *STATS* ● /userprofile
 ———————————————————
@@ -364,26 +358,35 @@ ${orders}
 ———————————————————
 ▏🌟 *EXTRA* ${storeStatus}
 ———————————————————
-${dropText}  <-- shows drop text directly
-${streakText(u)}
+${streak}
 ${lotteryLine}
 ———————————————————
-▏🛍 *PRODUCTS* ● ${storeStatus}
+▏🛍 *PRODUCTS*
 ———————————————————
 🥤 *Sprite Popperz* - *Info* /spritepop
 🍃 *Killer Green Budz* - *Info* /killergb
+———————————————————
+${lb.text}
+`,
+    { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
+  );
+}
 
-${lb.text}`,
-  { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
-);
-  
-// ================= START =================
-bot.onText(/\/start/, async msg => {
-  const id = msg.chat.id;
-  ensureUser(id, msg.from.username);
+// ================= DROP CALLBACK =================
+bot.on('callback_query', async q => {
+  const id = q.message.chat.id;
 
-  // Always show main menu using the unified editor
-  await showMainMenu(id);
+  if (q.data === 'view_drop') {
+    if (meta.drop && meta.drop.active) {
+      await bot.sendMessage(
+        id,
+        `🟢 *DROP LIVE*\n\n*${meta.drop.title}*\n_${meta.drop.description}_`,
+        { parse_mode: 'Markdown' }
+      );
+    } else {
+      await bot.sendMessage(id, '🔴 No active drop');
+    }
+  }
 });
 
 // ================= CALLBACKS =================
