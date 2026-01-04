@@ -311,8 +311,8 @@ async function showMainMenu(id, lbPage = 0) {
       const isBulk = parseFloat(o.cash) >= 400;
 
       return isBulk
-        ? `${o.status === '▏✅ Accepted' ? '🟢' : '⚪'} *${o.product}* — 🧱 *Bulk Order* — *${o.status}*`
-        : `${o.status === '▏✅ Accepted' ? '🟢' : '⚪'} *${o.product}* — ${o.grams}g — $${o.cash} — *${o.status}*`;
+        ? `${o.status === '✅ Accepted' ? '▏🟢' : '▏⚪'} *${o.product}* — 🧱 *Bulk Order* — *${o.status}*`
+        : `${o.status === '✅ Accepted' ? '▏🟢' : '▏⚪'} *${o.product}* — ${o.grams}g — $${o.cash} — *${o.status}*`;
     }).join('\n')
   : '_No orders yet_';
 
