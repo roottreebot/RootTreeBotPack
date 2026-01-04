@@ -385,14 +385,37 @@ ${lb.text}`,
   );
 }
 
-// ================= /START =================
+// ================= /START + TOKEN VERIFICATION =================
 bot.onText(/\/start/, async (msg) => {
   const id = msg.chat.id;
+  const text = msg.text;
 
   ensureUser(id);
   const u = users[id];
 
+  // If user is not verified
   if (!u.verified) {
+    // Check if the message is a token (not a command)
+    if (text && !text.startsWith('/')) {
+      const token = text.trim().toUpperCase();
+
+      if (!meta.tokens || !meta.tokens.includes(token)) {
+        return bot.sendMessage(id, '❌ Invalid token. Please enter a valid invite token.');
+      }
+
+      // Remove token so it can't be reused
+      meta.tokens = meta.tokens.filter(t => t !== token);
+      saveAll();
+
+      // Mark user as verified
+      u.verified = true;
+      saveAll();
+
+      await bot.sendMessage(id, '✅ Token accepted! Welcome!');
+      return showMainMenu(id);
+    }
+
+    // If message is /start or anything else, prompt for token
     return bot.sendMessage(
       id,
       '🔐 *Private Access*\n\nPlease enter your invite token to continue.',
@@ -400,6 +423,7 @@ bot.onText(/\/start/, async (msg) => {
     );
   }
 
+  // User is verified, show main menu
   showMainMenu(id);
 });
 
@@ -838,21 +862,30 @@ bot.on('message', async (msg) => {
 });
 
 // ================= /CREATETOKEN =================
-bot.onText(/\/createtoken/, (msg) => {
+bot.onText(/\/createtoken(?: (.+))?/, async (msg, match) => {
   const id = msg.chat.id;
 
-  if (!ADMIN_IDS.includes(id)) return;
+  // Only allow admins
+  if (!ADMIN_IDS.includes(id)) {
+    return bot.sendMessage(id, '❌ You are not authorized to create tokens.');
+  }
 
-  const token = Math.random().toString(36).substring(2, 8).toUpperCase();
+  // Optional custom token
+  let token = match[1] ? match[1].trim().toUpperCase() : null;
 
-  meta.inviteTokens.push(token);
+  if (!token) {
+    // Generate random 6-character alphanumeric token
+    token = Math.random().toString(36).substring(2, 8).toUpperCase();
+  }
+
+  // Ensure meta.tokens exists
+  if (!meta.tokens) meta.tokens = [];
+
+  // Add token to meta
+  meta.tokens.push(token);
   saveAll();
 
-  bot.sendMessage(
-    id,
-    `🔑 *Invite Token Created*\n\n\`${token}\``,
-    { parse_mode: 'Markdown' }
-  );
+  bot.sendMessage(id, `✅ Token created: *${token}*`, { parse_mode: 'Markdown' });
 });
 
 // ================= /clearpending =================
