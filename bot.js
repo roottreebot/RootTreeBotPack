@@ -388,34 +388,14 @@ ${lb.text}`,
 // ================= /START + TOKEN VERIFICATION =================
 bot.onText(/\/start/, async (msg) => {
   const id = msg.chat.id;
-  const text = msg.text;
-
   ensureUser(id);
   const u = users[id];
 
-  // If user is not verified
+  // If user isn't verified, ask for token
   if (!u.verified) {
-    // Check if the message is a token (not a command)
-    if (text && !text.startsWith('/')) {
-      const token = text.trim().toUpperCase();
+    sessions[id] = sessions[id] || {};
+    sessions[id].awaitingToken = true; // mark that we're waiting for token
 
-      if (!meta.tokens || !meta.tokens.includes(token)) {
-        return bot.sendMessage(id, '❌ Invalid token. Please enter a valid invite token.');
-      }
-
-      // Remove token so it can't be reused
-      meta.tokens = meta.tokens.filter(t => t !== token);
-      saveAll();
-
-      // Mark user as verified
-      u.verified = true;
-      saveAll();
-
-      await bot.sendMessage(id, '✅ Token accepted! Welcome!');
-      return showMainMenu(id);
-    }
-
-    // If message is /start or anything else, prompt for token
     return bot.sendMessage(
       id,
       '🔐 *Private Access*\n\nPlease enter your invite token to continue.',
@@ -423,8 +403,45 @@ bot.onText(/\/start/, async (msg) => {
     );
   }
 
-  // User is verified, show main menu
+  // Otherwise show main menu
   showMainMenu(id);
+});
+
+// ================= TOKEN INPUT HANDLER =================
+bot.on('message', async (msg) => {
+  const id = msg.chat.id;
+  const text = msg.text;
+
+  if (!text) return;
+
+  ensureUser(id);
+  const u = users[id];
+
+  // If user is awaiting token
+  if (!u.verified && sessions[id]?.awaitingToken) {
+    const tokenInput = text.trim().toUpperCase();
+
+    if (!meta.tokens || !meta.tokens.includes(tokenInput)) {
+      return bot.sendMessage(id, '❌ Invalid token. Please enter a valid invite token.');
+    }
+
+    // Remove token so it can't be reused
+    meta.tokens = meta.tokens.filter(t => t !== tokenInput);
+    u.verified = true;
+    saveAll();
+
+    sessions[id].awaitingToken = false; // done waiting
+
+    await bot.sendMessage(id, '✅ Token accepted! Welcome!');
+    return showMainMenu(id);
+  }
+
+  // If user is NOT verified, block any other message
+  if (!u.verified) {
+    return bot.sendMessage(id, '🔐 Please enter your invite token first using /start.');
+  }
+
+  // ===== Other bot message handlers can go here =====
 });
 
 // ================= CALLBACKS =================
