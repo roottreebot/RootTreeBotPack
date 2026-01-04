@@ -1,4 +1,4 @@
-// === ROOTTREE BOT (FINAL: V.2.00.22 ) ===
+// === ROOTTREE BOT (FINAL: V.2.00.25 ) ===
 const TelegramBot = require('node-telegram-bot-api');
 // Track bot start time
 const BOT_START_TIME = Date.now();
@@ -303,8 +303,8 @@ async function showMainMenu(id, lbPage = 0) {
   const highestRole = getHighestRole(u);
 
   const dropoffStatus = meta.dropoff
-  ? '🚗 *Drop-off:* 🟢 Available'
-  : '🚗 *Drop-off:* 🔴 Offline';
+  ? '🚗 *DROP OFF:* 🟢 ON'
+  : '🚗 *DROP OFF:* 🔴 OFF';
   
   const orders = u.orders.length
   ? u.orders.map(o => {
@@ -360,10 +360,11 @@ ${lotteryLine}
 ———————————————————
 ▏🛍 *PRODUCTS* ● ${storeStatus}
 ———————————————————
-${dropoffStatus}
-
-🥤 *Sprite Popperz* - *Info* /spritepop
-🍃 *Killer Green Budz* - *Info* /killergb
+▏${dropoffStatus}
+———————————————————
+▏🥤 *Sprite Popperz* - *Info* /spritepop
+▏🍃 *Killer Green Budz* - *Info* /killergb
+———————————————————
 
 ${lb.text}`,
     { parse_mode: 'Markdown', reply_markup: { inline_keyboard: kb } }
@@ -1370,7 +1371,7 @@ bot.onText(/\/dropon/, async (msg) => {
   meta.dropoff = true;
   saveAll();
 
-  bot.sendMessage(id, '🚗 Drop-off set to 🟢 Available');
+  bot.sendMessage(id, '🚗 DROP OFF set to 🟢 ON');
 });
 
 // ================= /DROPOFF =================
@@ -1381,7 +1382,7 @@ bot.onText(/\/dropoff/, async (msg) => {
   meta.dropoff = false;
   saveAll();
 
-  bot.sendMessage(id, '🚗 Drop-off set to 🔴 Offline');
+  bot.sendMessage(id, '🚗 DROP OFF set to 🔴 OFF');
 });
 
 // ================= /userhelp =============
@@ -1469,6 +1470,11 @@ bot.onText(/\/adminhelp/, async (msg) => {
 🎁 /reward @user <e.g. 10, XP, rolename> — *Reward A User Something*
 📊 /givewxp @user <e.g. 10 XP> — *Give User Weekly XP*
 📢 /broadcast <msg> — *Message All Users*
+
+🚘 *DELIVERY*
+———————————————————
+/dropoff — Turn Drop Off
+/dropon — Turn Drop On
 
 📦 *ACTIVE*
 ———————————————————
