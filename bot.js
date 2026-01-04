@@ -1574,6 +1574,9 @@ bot.onText(/\/adminhelp/, async (msg) => {
 📦 /exportdb — *Export Database*
 📥 /importdb — *Import Database*
 
+🪙 *TOKEN GENERATOR*
+/createtoken — Create Token For User Access
+
 💺 *USER MANAGEMENT*
 ———————————————————
 🚫 /ban @user — *Ban A User*
