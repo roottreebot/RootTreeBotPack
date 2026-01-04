@@ -391,16 +391,11 @@ bot.onText(/\/start/, async (msg) => {
   ensureUser(id);
   const u = users[id];
 
-  // If user isn't verified, ask for token
+  // If user isn't verified, just mark session to wait for token
   if (!u.verified) {
     sessions[id] = sessions[id] || {};
     sessions[id].awaitingToken = true; // mark that we're waiting for token
-
-    return bot.sendMessage(
-      id,
-      '🔐 *Private Access*\n\nPlease enter your invite token to continue.',
-      { parse_mode: 'Markdown' }
-    );
+    return; // do not send any message
   }
 
   // Otherwise show main menu
