@@ -79,6 +79,7 @@ function ensureUser(id, username) {
       username: username || '',
       lastOrderAt: 0,
       roles: [],
+      verified: false,
       privateWL: false,
 
       // 🔥 DAILY SYSTEM
@@ -333,6 +334,8 @@ async function showMainMenu(id, lbPage = 0) {
     kb.push([storeBtn]);
   }
 
+  meta.inviteTokens = meta.inviteTokens || [];
+  
   // ================= DROP-OFF STATUS =================
 if (!meta.dropoff) meta.dropoff = false;
   
@@ -382,15 +385,22 @@ ${lb.text}`,
   );
 }
 
-// ================= START =================
-bot.onText(/\/start/, async msg => {
+// ================= /START =================
+bot.onText(/\/start/, async (msg) => {
   const id = msg.chat.id;
-  ensureUser(id, msg.from.username);
 
-  if (!sessions[id]) sessions[id] = {};
+  ensureUser(id);
+  const u = users[id];
 
-  // Always show main menu using the unified editor
-  await showMainMenu(id);
+  if (!u.verified) {
+    return bot.sendMessage(
+      id,
+      '🔐 *Private Access*\n\nPlease enter your invite token to continue.',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  showMainMenu(id);
 });
 
 // ================= CALLBACKS =================
@@ -795,6 +805,54 @@ bot.on('callback_query', async (q) => {
       message_id: q.message.message_id
     });
   }
+});
+
+// ================= TOKEN INPUT =================
+bot.on('message', async (msg) => {
+  const id = msg.chat.id;
+  const text = msg.text;
+
+  if (!text || text.startsWith('/')) return;
+
+  ensureUser(id);
+  const u = users[id];
+
+  if (u.verified) return;
+
+  const token = text.trim().toUpperCase();
+
+  if (!meta.inviteTokens.includes(token)) {
+    bot.deleteMessage(id, msg.message_id).catch(() => {});
+    return bot.sendMessage(id, '❌ Invalid invite token.');
+  }
+
+  // Consume token
+  meta.inviteTokens = meta.inviteTokens.filter(t => t !== token);
+  u.verified = true;
+  saveAll();
+
+  bot.deleteMessage(id, msg.message_id).catch(() => {});
+  await bot.sendMessage(id, '✅ Access granted.');
+
+  showMainMenu(id);
+});
+
+// ================= /CREATETOKEN =================
+bot.onText(/\/createtoken/, (msg) => {
+  const id = msg.chat.id;
+
+  if (!ADMIN_IDS.includes(id)) return;
+
+  const token = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+  meta.inviteTokens.push(token);
+  saveAll();
+
+  bot.sendMessage(
+    id,
+    `🔑 *Invite Token Created*\n\n\`${token}\``,
+    { parse_mode: 'Markdown' }
+  );
 });
 
 // ================= /clearpending =================
