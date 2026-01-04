@@ -302,6 +302,10 @@ async function showMainMenu(id, lbPage = 0) {
   const u = users[id];
   const highestRole = getHighestRole(u);
 
+  const dropoffStatus = meta.dropoff
+  ? '🚗 *Drop-off:* 🟢 Available'
+  : '🚗 *Drop-off:* 🔴 Offline';
+  
   const orders = u.orders.length
   ? u.orders.map(o => {
       const isBulk = parseFloat(o.cash) >= 400;
@@ -327,6 +331,9 @@ async function showMainMenu(id, lbPage = 0) {
     kb.push([storeBtn]);
   }
 
+  // ================= DROP-OFF STATUS =================
+if (!meta.dropoff) meta.dropoff = false;
+  
   const storeStatus = meta.storeOpen ? '😙💨 *STORE OPEN*' : '😙❌️ *STORE CLOSED*';
 
   const lotteryLine = getLotteryMenuText();
@@ -353,6 +360,8 @@ ${lotteryLine}
 ———————————————————
 ▏🛍 *PRODUCTS* ● ${storeStatus}
 ———————————————————
+${dropoffStatus}
+
 🥤 *Sprite Popperz* - *Info* /spritepop
 🍃 *Killer Green Budz* - *Info* /killergb
 
@@ -1352,6 +1361,28 @@ async function botSend(id, text, options = {}) {
   sessions[id].botMessages.push(sent.message_id);
   return sent;
 }
+
+// ================= /DROPON =================
+bot.onText(/\/dropon/, async (msg) => {
+  const id = msg.chat.id;
+  if (!ADMIN_IDS.includes(id)) return;
+
+  meta.dropoff = true;
+  saveAll();
+
+  bot.sendMessage(id, '🚗 Drop-off set to 🟢 Available');
+});
+
+// ================= /DROPOFF =================
+bot.onText(/\/dropoff/, async (msg) => {
+  const id = msg.chat.id;
+  if (!ADMIN_IDS.includes(id)) return;
+
+  meta.dropoff = false;
+  saveAll();
+
+  bot.sendMessage(id, '🚗 Drop-off set to 🔴 Offline');
+});
 
 // ================= /userhelp =============
 bot.onText(/\/userhelp/, async (msg) => {
